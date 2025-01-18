@@ -5,25 +5,14 @@ use itertools::Itertools;
 use maps::{Map, StringMapLike};
 
 #[derive(Debug)]
-enum ValueEntry {
-    String(String),
-    Nested(Map<Vec<ValueEntry>>),
-}
+struct ValueEntry(Map<Vec<ValueEntry>>);
 
 #[derive(Debug, PartialEq, Eq)]
-pub struct KeyValue {
+struct KeyValue {
     key: String,
     value: String,
 }
 
-#[derive(Debug, PartialEq, Eq)]
-pub enum CCLError {
-    Error,
-}
-
-#[derive(Debug)]
-pub struct CCLErrors(Vec<CCLError>);
-pub type CCLResult = Result<KVList, CCLErrors>;
 type KVList = Vec<KeyValue>;
 fn indent(s: &str) -> usize {
     s.len() - s.trim_start_matches(' ').len()
@@ -131,21 +120,16 @@ impl StringMapLike<Model> for Model {
 }
 
 fn fix_entry_map(mp: Map<Vec<ValueEntry>>) -> Model {
-    fn normalise_entry(entry: ValueEntry) -> Model {
-        match entry {
-            ValueEntry::String(v) => Model(Map::from([(v, EMPTY)])),
-            ValueEntry::Nested(m) => fix_entry_map(m),
-        }
-    }
-    fn normalise_entries(entries: Vec<ValueEntry>) -> Model {
-        entries
-            .into_iter()
-            .map(normalise_entry)
-            .fold(EMPTY, Model::merge)
-    }
     Model(
         mp.into_iter()
-            .map(|(k, v)| (k, normalise_entries(v)))
+            .map(|(k, v)| {
+                (
+                    k,
+                    v.into_iter()
+                        .map(|em| fix_entry_map(em.0))
+                        .fold(EMPTY, Model::merge),
+                )
+            })
             .collect(),
     )
 }
@@ -153,7 +137,7 @@ fn add_key_val(
     mut mp: Map<Vec<ValueEntry>>,
     KeyValue { key, value }: KeyValue,
 ) -> Map<Vec<ValueEntry>> {
-    let value: ValueEntry = ValueEntry::Nested(of_key_vals(parse(value.clone())));
+    let value: ValueEntry = ValueEntry(of_key_vals(parse(value.clone())));
     mp.entry(key).or_default().push(value);
     mp
 }
