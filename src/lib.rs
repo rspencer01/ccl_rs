@@ -1,52 +1,13 @@
 #![allow(dead_code)]
+mod maps;
+
 use itertools::Itertools;
-type Map<T, U> = std::collections::BTreeMap<T, U>;
-trait MapLike<K: 'static, V>: Default {
-    fn keys(&self) -> impl Iterator<Item = &K>;
-    fn remove(&mut self, key: &K) -> Option<V>;
-    fn insert(&mut self, key: K, value: V);
-}
-impl<K: Ord + 'static, V> MapLike<K, V> for Map<K, V> {
-    fn keys(&self) -> impl Iterator<Item = &K> {
-        self.keys()
-    }
-
-    fn remove(&mut self, key: &K) -> Option<V> {
-        self.remove(key)
-    }
-
-    fn insert(&mut self, key: K, value: V) {
-        self.insert(key, value);
-    }
-}
+use maps::{Map, StringMapLike};
 
 #[derive(Debug)]
 enum ValueEntry {
     String(String),
-    Nested(Map<String, Vec<ValueEntry>>),
-}
-
-fn union_maplike<K, V, M>(mut first: M, mut second: M, merge: impl Fn(V, V) -> V) -> M
-where
-    K: Clone + Ord + 'static,
-    M: Default + MapLike<K, V>,
-{
-    let mut result = M::default();
-    let all_keys = first
-        .keys()
-        .chain(second.keys())
-        .cloned()
-        .collect::<std::collections::BTreeSet<_>>();
-    for key in all_keys.into_iter() {
-        let value = match (first.remove(&key), second.remove(&key)) {
-            (None, Some(v)) => v,
-            (Some(v), None) => v,
-            (Some(v1), Some(v2)) => merge(v1, v2),
-            (None, None) => unreachable!(),
-        };
-        result.insert(key, value);
-    }
-    result
+    Nested(Map<Vec<ValueEntry>>),
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -117,16 +78,16 @@ impl Default for KVList {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Default)]
-pub struct Model(Map<String, Model>);
+pub struct Model(Map<Model>);
 impl Model {
     fn merge(a: Model, b: Model) -> Model {
-        union_maplike(a, b, Model::merge)
+        Self::union(a, b, Model::merge)
     }
     fn fmt_indented(&self, f: &mut std::fmt::Formatter<'_>, indent: usize) -> std::fmt::Result {
         if !self.0.is_empty() && indent > 0 {
             writeln!(f)?;
         }
-        for (i, (k, v)) in self.0.iter().enumerate() {
+        for (i, (k, v)) in self.iter().enumerate() {
             if i > 0 {
                 writeln!(f)?;
             }
@@ -142,21 +103,48 @@ impl std::fmt::Display for Model {
     }
 }
 pub const EMPTY: Model = Model(Map::new());
-impl MapLike<String, Model> for Model {
-    fn keys(&self) -> impl Iterator<Item = &String> {
-        self.0.keys()
+impl IntoIterator for Model {
+    type Item = (String, Model);
+
+    type IntoIter = std::collections::btree_map::IntoIter<String, Model>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.0.into_iter()
+    }
+}
+impl StringMapLike<Model> for Model {
+    fn keys(&self) -> impl Iterator<Item = &str> {
+        StringMapLike::keys(&self.0)
     }
 
-    fn remove(&mut self, key: &String) -> Option<Model> {
-        self.0.remove(key)
+    fn values<'a>(&'a self) -> impl Iterator<Item = &'a Model>
+    where
+        Model: 'a,
+    {
+        StringMapLike::values(&self.0)
+    }
+
+    fn get(&self, key: &str) -> Option<&Model> {
+        StringMapLike::get(&self.0, key)
     }
 
     fn insert(&mut self, key: String, value: Model) {
-        self.0.insert(key, value);
+        StringMapLike::insert(&mut self.0, key, value);
+    }
+
+    fn len(&self) -> usize {
+        StringMapLike::len(&self.0)
+    }
+
+    fn iter<'a>(&'a self) -> impl Iterator<Item = (&'a str, &'a Model)>
+    where
+        Model: 'a,
+    {
+        StringMapLike::iter(&self.0)
     }
 }
 
-fn fix_entry_map(mp: Map<String, Vec<ValueEntry>>) -> Model {
+fn fix_entry_map(mp: Map<Vec<ValueEntry>>) -> Model {
     fn normalise_entry(entry: ValueEntry) -> Model {
         match entry {
             ValueEntry::String(v) => Model(Map::from([(v, EMPTY)])),
@@ -176,9 +164,9 @@ fn fix_entry_map(mp: Map<String, Vec<ValueEntry>>) -> Model {
     )
 }
 fn add_key_val(
-    mut mp: Map<String, Vec<ValueEntry>>,
+    mut mp: Map<Vec<ValueEntry>>,
     KeyValue { key, value }: KeyValue,
-) -> Map<String, Vec<ValueEntry>> {
+) -> Map<Vec<ValueEntry>> {
     let value: ValueEntry = KVList::parse(value.clone())
         .map(of_key_vals)
         .map(ValueEntry::Nested)
@@ -186,7 +174,7 @@ fn add_key_val(
     mp.entry(key).or_default().push(value);
     mp
 }
-fn of_key_vals(kvlist: KVList) -> Map<String, Vec<ValueEntry>> {
+fn of_key_vals(kvlist: KVList) -> Map<Vec<ValueEntry>> {
     kvlist.0.into_iter().fold(Map::new(), add_key_val)
 }
 pub fn fix(kvlist: KVList) -> Model {
@@ -711,7 +699,7 @@ user =
     }
     mod test_property {
         use super::*;
-        use rand::distributions::{Alphanumeric, Standard, Uniform};
+        use rand::distributions::{Alphanumeric, Uniform};
         use rand::{Rng, SeedableRng};
         use rand_chacha::ChaCha8Rng;
 
