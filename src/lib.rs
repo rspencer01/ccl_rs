@@ -24,56 +24,38 @@ pub enum CCLError {
 #[derive(Debug)]
 pub struct CCLErrors(Vec<CCLError>);
 pub type CCLResult = Result<KVList, CCLErrors>;
-#[derive(Debug)]
-pub struct KVList(Vec<KeyValue>);
+type KVList = Vec<KeyValue>;
 fn indent(s: &str) -> usize {
     s.len() - s.trim_start_matches(' ').len()
 }
-impl KVList {
-    pub fn new(list: Vec<KeyValue>) -> Self {
-        Self(list)
-    }
-    pub fn is_empty(&self) -> bool {
-        self.0.is_empty()
-    }
-    pub fn parse(s: String) -> CCLResult {
-        let mut ans = KVList::new(vec![]);
-        let s = s.strip_prefix("\n").unwrap_or(&s);
-        let first_indent = indent(s);
-        let s = s.trim_start();
-        if s.is_empty() {
-            Ok(ans)
-        } else if let Some((first_key, rest)) = s.split_once('=') {
-            let mut lines = rest
-                .trim_start_matches(' ')
-                .trim_end()
-                .split("\n")
-                .enumerate();
-            let first_value: String = lines
-                .take_while_ref(|(i, x)| *i == 0 || indent(x) > first_indent || x.is_empty())
-                .map(|(_, x)| x)
-                .join("\n")
-                .trim_end()
-                .to_owned();
-            let remainder = lines.map(|(_, x)| x).join("\n");
-            ans.0.push(KeyValue {
-                key: first_key.trim().to_owned(),
-                value: first_value.to_owned(),
-            });
-            ans.0.append(&mut Self::parse(remainder)?.0);
-            Ok(ans)
-        } else {
-            Err(CCLErrors(vec![CCLError::Error]))
-        }
-    }
-    pub fn iter(&self) -> impl Iterator<Item = &KeyValue> {
-        self.0.iter()
-    }
-}
-
-impl Default for KVList {
-    fn default() -> Self {
-        Self::new(vec![])
+fn parse(s: String) -> CCLResult {
+    let mut ans = KVList::new();
+    let s = s.strip_prefix("\n").unwrap_or(&s);
+    let first_indent = indent(s);
+    let s = s.trim_start();
+    if s.is_empty() {
+        Ok(ans)
+    } else if let Some((first_key, rest)) = s.split_once('=') {
+        let mut lines = rest
+            .trim_start_matches(' ')
+            .trim_end()
+            .split("\n")
+            .enumerate();
+        let first_value: String = lines
+            .take_while_ref(|(i, x)| *i == 0 || indent(x) > first_indent || x.is_empty())
+            .map(|(_, x)| x)
+            .join("\n")
+            .trim_end()
+            .to_owned();
+        let remainder = lines.map(|(_, x)| x).join("\n");
+        ans.push(KeyValue {
+            key: first_key.trim().to_owned(),
+            value: first_value.to_owned(),
+        });
+        ans.append(&mut parse(remainder)?);
+        Ok(ans)
+    } else {
+        Err(CCLErrors(vec![CCLError::Error]))
     }
 }
 
@@ -167,7 +149,7 @@ fn add_key_val(
     mut mp: Map<Vec<ValueEntry>>,
     KeyValue { key, value }: KeyValue,
 ) -> Map<Vec<ValueEntry>> {
-    let value: ValueEntry = KVList::parse(value.clone())
+    let value: ValueEntry = parse(value.clone())
         .map(of_key_vals)
         .map(ValueEntry::Nested)
         .unwrap_or(ValueEntry::String(value));
@@ -175,7 +157,7 @@ fn add_key_val(
     mp
 }
 fn of_key_vals(kvlist: KVList) -> Map<Vec<ValueEntry>> {
-    kvlist.0.into_iter().fold(Map::new(), add_key_val)
+    kvlist.into_iter().fold(Map::new(), add_key_val)
 }
 pub fn fix(kvlist: KVList) -> Model {
     fix_entry_map(of_key_vals(kvlist))
@@ -239,7 +221,7 @@ user =
 
     macro_rules! kvl {
             [$($k:expr => $v:expr),* $(,)?] => {
-                KVList::new(vec![$(kv![$k => $v]),*])
+                vec![$(kv![$k => $v]),*]
             };
         }
     macro_rules! model_term {
@@ -263,10 +245,7 @@ user =
         macro_rules! assert_parse_iter {
             ($input:expr, $expected:expr) => {
                 assert_eq!(
-                    KVList::parse($input.to_owned())
-                        .unwrap()
-                        .iter()
-                        .collect::<Vec<_>>(),
+                    parse($input.to_owned()).unwrap().iter().collect::<Vec<_>>(),
                     $expected
                 )
             };
@@ -279,7 +258,7 @@ user =
             fn test_empty(
                 #[values("", " ", "   ", "\n", "  \n", "\n\n", "  \n  \n  ")] input: &str,
             ) {
-                assert!(KVList::parse(input.to_owned()).unwrap().is_empty())
+                assert!(parse(input.to_owned()).unwrap().is_empty())
             }
         }
         mod test_error {
@@ -288,7 +267,7 @@ user =
             #[test]
             fn test_no_value() {
                 assert_eq!(
-                    dbg!(KVList::parse("key".to_string())).err().unwrap().0,
+                    dbg!(parse("key".to_string())).err().unwrap().0,
                     [CCLError::Error]
                 )
             }
@@ -502,26 +481,20 @@ key =
             use pretty_assertions::assert_eq;
             #[test]
             fn test_empty() {
-                assert!(KVList::parse("".to_owned()).unwrap().is_empty())
+                assert!(parse("".to_owned()).unwrap().is_empty())
             }
             #[ignore]
             #[test]
             fn test_spaces() {
-                assert_eq!(
-                    KVList::parse("   ".to_owned()).err().unwrap().0,
-                    [CCLError::Error]
-                )
+                assert_eq!(parse("   ".to_owned()).err().unwrap().0, [CCLError::Error])
             }
             #[test]
             fn test_eol() {
-                assert!(KVList::parse("\n".to_owned()).unwrap().is_empty())
+                assert!(parse("\n".to_owned()).unwrap().is_empty())
             }
             #[test]
             fn test_just_string() {
-                assert_eq!(
-                    KVList::parse("val".to_owned()).err().unwrap().0,
-                    [CCLError::Error]
-                )
+                assert_eq!(parse("val".to_owned()).err().unwrap().0, [CCLError::Error])
             }
             #[test]
             fn test_empty_key_val() {
@@ -530,14 +503,14 @@ key =
             #[test]
             fn test_multi_line_plain() {
                 assert_eq!(
-                    KVList::parse("val\n  next".to_owned()).err().unwrap().0,
+                    parse("val\n  next".to_owned()).err().unwrap().0,
                     [CCLError::Error]
                 )
             }
             #[test]
             fn test_multi_line_plain_nested() {
                 assert_eq!(
-                    KVList::parse(
+                    parse(
                         "
 val
   next"
@@ -731,7 +704,7 @@ user =
         ) {
             let mut rng = ChaCha8Rng::seed_from_u64(100 * seed + 10 * width as u64 + depth as u64);
             let ccl = random_ccl(&mut rng, width, depth);
-            assert_eq!(ccl, fix(KVList::parse(format!("{}", ccl)).unwrap()))
+            assert_eq!(ccl, fix(parse(format!("{}", ccl)).unwrap()))
         }
         #[rstest]
         fn test_associative(
