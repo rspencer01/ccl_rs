@@ -159,8 +159,11 @@ fn add_key_val(
 fn of_key_vals(kvlist: KVList) -> Map<Vec<ValueEntry>> {
     kvlist.into_iter().fold(Map::new(), add_key_val)
 }
-pub fn fix(kvlist: KVList) -> Model {
+fn fix(kvlist: KVList) -> Model {
     fix_entry_map(of_key_vals(kvlist))
+}
+pub fn load(s: String) -> Model {
+    fix(parse(s).unwrap())
 }
 
 #[cfg(test)]
@@ -704,7 +707,7 @@ user =
         ) {
             let mut rng = ChaCha8Rng::seed_from_u64(100 * seed + 10 * width as u64 + depth as u64);
             let ccl = random_ccl(&mut rng, width, depth);
-            assert_eq!(ccl, fix(parse(format!("{}", ccl)).unwrap()))
+            assert_eq!(ccl, load(format!("{}", ccl)))
         }
         #[rstest]
         fn test_associative(
