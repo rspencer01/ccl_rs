@@ -55,7 +55,11 @@ fn parse(s: String) -> CCLResult {
         ans.append(&mut parse(remainder)?);
         Ok(ans)
     } else {
-        Err(CCLErrors(vec![CCLError::Error]))
+        ans.push(KeyValue {
+            key: s.trim().to_owned(),
+            value: String::new(),
+        });
+        Ok(ans)
     }
 }
 
@@ -262,17 +266,6 @@ user =
                 #[values("", " ", "   ", "\n", "  \n", "\n\n", "  \n  \n  ")] input: &str,
             ) {
                 assert!(parse(input.to_owned()).unwrap().is_empty())
-            }
-        }
-        mod test_error {
-            use super::*;
-            use pretty_assertions::assert_eq;
-            #[test]
-            fn test_no_value() {
-                assert_eq!(
-                    dbg!(parse("key".to_string())).err().unwrap().0,
-                    [CCLError::Error]
-                )
             }
         }
         mod test_multiple {
@@ -497,7 +490,7 @@ key =
             }
             #[test]
             fn test_just_string() {
-                assert_eq!(parse("val".to_owned()).err().unwrap().0, [CCLError::Error])
+                assert_parse_iter!("val", [&kv!["val" => ""]])
             }
             #[test]
             fn test_empty_key_val() {
@@ -505,24 +498,15 @@ key =
             }
             #[test]
             fn test_multi_line_plain() {
-                assert_eq!(
-                    parse("val\n  next".to_owned()).err().unwrap().0,
-                    [CCLError::Error]
-                )
+                assert_parse_iter!("val\n  next", [&kv!["val\n  next" => ""]])
             }
             #[test]
             fn test_multi_line_plain_nested() {
-                assert_eq!(
-                    parse(
-                        "
-val
-  next"
-                            .to_owned()
-                    )
-                    .err()
-                    .unwrap()
-                    .0,
-                    [CCLError::Error]
+                assert_parse_iter!(
+                    "val
+  next",
+                    [&kv!["val
+  next" => ""]]
                 )
             }
             #[test]
