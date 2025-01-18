@@ -43,7 +43,6 @@
 //! # Ok(())
 //! # }
 //! ```
-#![allow(dead_code)]
 mod maps;
 
 use std::str::FromStr;
