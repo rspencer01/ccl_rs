@@ -3,8 +3,9 @@
 //! ## Examples
 //!
 //! ```
-//! use ccl_rs::load;
+//! use ccl_rs::{Model, load};
 //!
+//! # fn main() -> std::result::Result<(), ccl_rs::CCLError> {
 //! let ccl_doc = "
 //! /= This is a CCL document
 //! title = CCL Example
@@ -15,6 +16,9 @@
 //!     = 8000
 //!     = 8001
 //!     = 8002
+//!   hosts =
+//!     0.0.0.0 =
+//!     localhost =
 //!   limits =
 //!     cpu = 1500mi
 //!     memory = 10Gb
@@ -23,13 +27,26 @@
 //!   guestId = 42
 //!
 //! user =
-//!   login = chshersh
-//!   createdAt = 2024-12-31
+//!   login = rspencer01
+//!   createdAt = 2025-01-18
 //! ";
 //! let m = load(ccl_doc.to_owned());
+//! let title : String = m.get("title")?.value()?;
+//! assert_eq!(title, "CCL Example");
+//! assert_eq!(m.at(["database", "limits", "cpu"])?.value::<String>()?, "1500mi");
+//! assert!(m.get("database")?.value::<String>().is_err());
+//! assert!(m.get("not_here").is_err());
+//! assert_eq!(m.at(["database", "ports"])?.as_list().map(|x|x.value::<u32>().unwrap()).collect::<Vec<_>>(), [8000,
+//! 8001, 8002]);
+//! assert_eq!(m.at(["database", "hosts"])?.as_list().map(|x|x.value::<String>().unwrap()).collect::<Vec<_>>(), [
+//! "0.0.0.0", "localhost"]);
+//! # Ok(())
+//! # }
 //! ```
 #![allow(dead_code)]
 mod maps;
+
+use std::str::FromStr;
 
 use itertools::Itertools;
 use maps::{Map, StringMapLike};
@@ -82,6 +99,9 @@ fn parse(s: String) -> KVList {
     }
 }
 
+#[derive(Debug)]
+pub struct CCLError;
+
 #[derive(Clone, Debug, PartialEq, Eq, Default)]
 pub struct Model(Map<Model>);
 impl Model {
@@ -100,6 +120,33 @@ impl Model {
             v.fmt_indented(f, indent + 2)?;
         }
         Ok(())
+    }
+    pub fn get(&self, key: &str) -> Result<&Model, CCLError> {
+        <Self as StringMapLike<_>>::get(self, key).ok_or(CCLError)
+    }
+    pub fn at<'a>(&self, keys: impl IntoIterator<Item = &'a str>) -> Result<&Model, CCLError> {
+        keys.into_iter().try_fold(self, Self::get)
+    }
+    pub fn value<T: FromStr>(&self) -> Result<T, CCLError> {
+        if let [key] = self.keys().collect::<Vec<_>>().as_slice() {
+            if self.get(key).ok() == Some(&EMPTY) {
+                key.parse().map_err(|_| CCLError)
+            } else {
+                Err(CCLError)
+            }
+        } else {
+            Err(CCLError)
+        }
+    }
+    pub fn as_list(&self) -> impl Iterator<Item = Model> + use<'_> {
+        if self.0.len() == 1 {
+            if let Ok(children) = self.get("") {
+                return children.as_list();
+            }
+        }
+        self.0
+            .iter()
+            .map(|(k, v)| Model([(k.clone(), v.clone())].into()))
     }
 }
 impl std::fmt::Display for Model {
