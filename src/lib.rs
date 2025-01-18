@@ -1,3 +1,33 @@
+//! # `ccl_rs`
+//!
+//! ## Examples
+//!
+//! ```
+//! use ccl_rs::load;
+//!
+//! let ccl_doc = "
+//! /= This is a CCL document
+//! title = CCL Example
+//!
+//! database =
+//!   enabled = true
+//!   ports =
+//!     = 8000
+//!     = 8001
+//!     = 8002
+//!   limits =
+//!     cpu = 1500mi
+//!     memory = 10Gb
+//!
+//! user =
+//!   guestId = 42
+//!
+//! user =
+//!   login = chshersh
+//!   createdAt = 2024-12-31
+//! ";
+//! let m = load(ccl_doc.to_owned());
+//! ```
 #![allow(dead_code)]
 mod maps;
 
