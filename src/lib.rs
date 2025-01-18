@@ -28,13 +28,13 @@ type KVList = Vec<KeyValue>;
 fn indent(s: &str) -> usize {
     s.len() - s.trim_start_matches(' ').len()
 }
-fn parse(s: String) -> CCLResult {
+fn parse(s: String) -> KVList {
     let mut ans = KVList::new();
     let s = s.strip_prefix("\n").unwrap_or(&s);
     let first_indent = indent(s);
     let s = s.trim_start();
     if s.is_empty() {
-        Ok(ans)
+        ans
     } else if let Some((first_key, rest)) = s.split_once('=') {
         let mut lines = rest
             .trim_start_matches(' ')
@@ -52,14 +52,14 @@ fn parse(s: String) -> CCLResult {
             key: first_key.trim().to_owned(),
             value: first_value.to_owned(),
         });
-        ans.append(&mut parse(remainder)?);
-        Ok(ans)
+        ans.append(&mut parse(remainder));
+        ans
     } else {
         ans.push(KeyValue {
             key: s.trim().to_owned(),
             value: String::new(),
         });
-        Ok(ans)
+        ans
     }
 }
 
@@ -153,10 +153,7 @@ fn add_key_val(
     mut mp: Map<Vec<ValueEntry>>,
     KeyValue { key, value }: KeyValue,
 ) -> Map<Vec<ValueEntry>> {
-    let value: ValueEntry = parse(value.clone())
-        .map(of_key_vals)
-        .map(ValueEntry::Nested)
-        .unwrap_or(ValueEntry::String(value));
+    let value: ValueEntry = ValueEntry::Nested(of_key_vals(parse(value.clone())));
     mp.entry(key).or_default().push(value);
     mp
 }
@@ -167,7 +164,7 @@ fn fix(kvlist: KVList) -> Model {
     fix_entry_map(of_key_vals(kvlist))
 }
 pub fn load(s: String) -> Model {
-    fix(parse(s).unwrap())
+    fix(parse(s))
 }
 
 #[cfg(test)]
@@ -252,7 +249,7 @@ user =
         macro_rules! assert_parse_iter {
             ($input:expr, $expected:expr) => {
                 assert_eq!(
-                    parse($input.to_owned()).unwrap().iter().collect::<Vec<_>>(),
+                    parse($input.to_owned()).iter().collect::<Vec<_>>(),
                     $expected
                 )
             };
@@ -265,7 +262,7 @@ user =
             fn test_empty(
                 #[values("", " ", "   ", "\n", "  \n", "\n\n", "  \n  \n  ")] input: &str,
             ) {
-                assert!(parse(input.to_owned()).unwrap().is_empty())
+                assert!(parse(input.to_owned()).is_empty())
             }
         }
         mod test_multiple {
@@ -396,6 +393,10 @@ key =
             use super::*;
             use pretty_assertions::assert_eq;
             #[rstest]
+            fn test_no_value(#[values("key", "  key", "key  ", "  key  ")] input: &str) {
+                assert_parse_iter!(input, [&kv!["key" => ""]])
+            }
+            #[rstest]
             fn test_single(
                 #[values(
                     "key=val",
@@ -477,16 +478,16 @@ key =
             use pretty_assertions::assert_eq;
             #[test]
             fn test_empty() {
-                assert!(parse("".to_owned()).unwrap().is_empty())
+                assert!(parse("".to_owned()).is_empty())
             }
             #[ignore]
             #[test]
             fn test_spaces() {
-                assert_eq!(parse("   ".to_owned()).err().unwrap().0, [CCLError::Error])
+                assert!(parse("   ".to_owned()).is_empty(),)
             }
             #[test]
             fn test_eol() {
-                assert!(parse("\n".to_owned()).unwrap().is_empty())
+                assert!(parse("\n".to_owned()).is_empty())
             }
             #[test]
             fn test_just_string() {
