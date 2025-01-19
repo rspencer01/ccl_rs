@@ -108,6 +108,27 @@ impl Model {
     fn merge(a: Model, b: Model) -> Model {
         Self::union(a, b, Model::merge)
     }
+    pub fn fold(self) -> Model {
+        if self.len() == 1 {
+            if self.is_singleton() {
+                return self;
+            }
+            let key = self.keys().next().unwrap().to_owned();
+            let value = self.values().next().unwrap();
+            value
+                .split()
+                .map(|m| {
+                    Model(
+                        m.into_iter()
+                            .map(|(k, v)| (k, Model([(key.clone(), v)].into()).fold()))
+                            .collect(),
+                    )
+                })
+                .fold(EMPTY, Model::merge)
+        } else {
+            self.split().map(Self::fold).fold(EMPTY, Model::merge)
+        }
+    }
     fn split(&self) -> impl Iterator<Item = Model> + use<'_> {
         self.iter()
             .map(|(k, v)| Model([(k.to_owned(), v.clone())].into()))
@@ -856,6 +877,40 @@ user =
                 ChaCha8Rng::seed_from_u64(5000 + 100 * seed + 10 * width as u64 + depth as u64);
             let ccl = random_ccl(&mut rng, width, depth);
             assert_eq!(ccl.split().fold(EMPTY, Model::merge), ccl.clone());
+        }
+        #[rstest]
+        fn test_fold_endomorphism(
+            #[values(1, 2, 3)] seed: u64,
+            #[values(4, 5, 6)] width: usize,
+            #[values(1, 4, 8)] depth: usize,
+        ) {
+            let mut rng =
+                ChaCha8Rng::seed_from_u64(6000 + 100 * seed + 10 * width as u64 + depth as u64);
+            let ccl1 = random_ccl(&mut rng, width, depth);
+            let ccl2 = random_ccl(&mut rng, width, depth);
+            assert_eq!(
+                Model::merge(ccl1.clone(), ccl2.clone()).fold(),
+                Model::merge(ccl1.fold(), ccl2.fold())
+            );
+        }
+    }
+    mod test_helpers {
+        use super::*;
+        use pretty_assertions::assert_eq;
+        #[test]
+        fn test_fold_empty() {
+            assert_eq!(EMPTY.clone().fold(), EMPTY)
+        }
+        #[test]
+        fn test_fold_singleton() {
+            assert_eq!(model!["key"].fold(), model!["key"])
+        }
+        #[test]
+        fn test_fold() {
+            assert_eq!(
+                model!["key1" => model!["value1", "key2" => model!["value2"]], "key3" => model!["key2" => model![ "value3" ]]].fold(),
+                model!["value1" => model![ "key1" ] , "key2" => model!["value2" => model![ "key1" ] , "value3" => model![ "key3" ]]],
+            )
         }
     }
 }
