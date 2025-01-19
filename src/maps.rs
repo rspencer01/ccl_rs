@@ -1,4 +1,6 @@
-pub(crate) type Map<V> = std::collections::BTreeMap<String, V>;
+use ordermap::OrderMap;
+
+pub(crate) type Map<V> = OrderMap<String, V>;
 
 pub(crate) trait StringMapLike<V>: Default + IntoIterator {
     fn keys(&self) -> impl Iterator<Item = &str>;
@@ -23,24 +25,23 @@ pub(crate) trait StringMapLike<V>: Default + IntoIterator {
         V: Clone,
     {
         let mut result = Self::default();
-        let all_keys = first
-            .keys()
-            .chain(second.keys())
-            .map(str::to_owned)
-            .collect::<std::collections::BTreeSet<_>>();
+        let all_keys = first.keys().chain(second.keys()).collect::<Vec<_>>();
         for key in all_keys.into_iter() {
-            let value = match (first.get(&key), second.get(&key)) {
-                (None, Some(v)) => v.clone(),
-                (Some(v), None) => v.clone(),
-                (Some(v1), Some(v2)) => merge(v1.clone(), v2.clone()),
-                (None, None) => unreachable!(),
-            };
-            result.insert(key.to_owned(), value);
+            if result.get(key).is_none() {
+                let value = match (first.get(key), second.get(key)) {
+                    (None, Some(v)) => v.clone(),
+                    (Some(v), None) => v.clone(),
+                    (Some(v1), Some(v2)) => merge(v1.clone(), v2.clone()),
+                    (None, None) => unreachable!(),
+                };
+                result.insert(key.to_owned(), value);
+            }
         }
         result
     }
 }
-impl<V> StringMapLike<V> for Map<V> {
+
+impl<V: std::hash::Hash + Eq> StringMapLike<V> for Map<V> {
     fn keys(&self) -> impl Iterator<Item = &str> {
         self.keys().map(String::as_str)
     }
@@ -53,11 +54,11 @@ impl<V> StringMapLike<V> for Map<V> {
     }
 
     fn get(&self, key: &str) -> Option<&V> {
-        std::collections::BTreeMap::get(self, key)
+        OrderMap::get(self, key)
     }
 
     fn insert(&mut self, key: String, value: V) {
-        self.insert(key, value);
+        OrderMap::insert(self, key, value);
     }
 
     fn len(&self) -> usize {

@@ -5,6 +5,7 @@ edition = "2021"
 
 [dependencies]
 itertools = "0.14.0"
+ordermap = "0.5.4"
 
 [dev-dependencies]
 rstest = "0.24.0"

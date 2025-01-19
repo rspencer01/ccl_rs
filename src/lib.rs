@@ -101,9 +101,12 @@ fn parse(s: String) -> KVList {
 #[derive(Debug)]
 pub struct CCLError;
 
-#[derive(Clone, Debug, PartialEq, Eq, Default)]
+#[derive(Hash, Clone, Debug, PartialEq, Eq, Default)]
 pub struct Model(Map<Model>);
 impl Model {
+    fn empty() -> Model {
+        Model(Map::new())
+    }
     fn merge(a: Model, b: Model) -> Model {
         Self::union(a, b, Model::merge)
     }
@@ -123,9 +126,11 @@ impl Model {
                             .collect(),
                     )
                 })
-                .fold(EMPTY, Model::merge)
+                .fold(Model::empty(), Model::merge)
         } else {
-            self.split().map(Self::fold).fold(EMPTY, Model::merge)
+            self.split()
+                .map(Self::fold)
+                .fold(Model::empty(), Model::merge)
         }
     }
     fn split(&self) -> impl Iterator<Item = Model> + use<'_> {
@@ -133,7 +138,7 @@ impl Model {
             .map(|(k, v)| Model([(k.to_owned(), v.clone())].into()))
     }
     pub fn as_singleton(&self) -> Option<String> {
-        if self.len() == 1 && self.values().all_equal_value() == Ok(&EMPTY) {
+        if self.len() == 1 && self.values().all_equal_value() == Ok(&Self::empty()) {
             self.keys().next().map(str::to_owned)
         } else {
             None
@@ -177,7 +182,7 @@ impl Model {
                 "",
                 if v.is_singleton() {
                     " "
-                } else if v == &EMPTY {
+                } else if v == &Model::empty() {
                     ""
                 } else {
                     "\n"
@@ -195,7 +200,7 @@ impl Model {
     }
     pub fn value<T: FromStr>(&self) -> Result<T, CCLError> {
         if let [key] = self.keys().collect::<Vec<_>>().as_slice() {
-            if self.get(key).ok() == Some(&EMPTY) {
+            if self.get(key).ok() == Some(&Model::empty()) {
                 key.parse().map_err(|_| CCLError)
             } else {
                 Err(CCLError)
@@ -210,11 +215,10 @@ impl std::fmt::Display for Model {
         self.fmt_indented(f, 0)
     }
 }
-pub const EMPTY: Model = Model(Map::new());
 impl IntoIterator for Model {
     type Item = (String, Model);
 
-    type IntoIter = std::collections::btree_map::IntoIter<String, Model>;
+    type IntoIter = ordermap::map::IntoIter<String, Model>;
 
     fn into_iter(self) -> Self::IntoIter {
         self.0.into_iter()
@@ -260,7 +264,7 @@ fn fix_entry_map(mp: Map<Vec<ValueEntry>>) -> Model {
                     k,
                     v.into_iter()
                         .map(|em| fix_entry_map(em.0))
-                        .fold(EMPTY, Model::merge),
+                        .fold(Model::empty(), Model::merge),
                 )
             })
             .collect(),
@@ -350,7 +354,7 @@ user =
             ($k.to_owned(), $v)
         };
         ($k:literal) => {
-            ($k.to_owned(), EMPTY)
+            ($k.to_owned(), Model::empty())
         };
     }
     macro_rules! model {
@@ -673,13 +677,13 @@ key2 = val2",
         use pretty_assertions::assert_eq;
         #[test]
         fn test_empty() {
-            assert_eq!(fix(kvl![]), EMPTY)
+            assert_eq!(fix(kvl![]), Model::empty())
         }
         #[test]
         fn test_single() {
             assert_eq!(
                 fix(kvl!["key" => "value"]),
-                model!["key" => model!["value" => EMPTY]]
+                model!["key" => model!["value" => Model::empty()]]
             )
         }
         #[test]
@@ -687,8 +691,8 @@ key2 = val2",
             assert_eq!(
                 fix(kvl!["key1" => "value1", "key2" => "value2"]),
                 model![
-                    "key1" => model!["value1" => EMPTY],
-                    "key2" => model!["value2" => EMPTY],
+                    "key1" => model!["value1" => Model::empty()],
+                    "key2" => model!["value2" => Model::empty()],
                 ]
             )
         }
@@ -764,20 +768,20 @@ key2 = val2",
             assert_eq!(
                 format!("{}", stress_model!()),
                 "/ = This is a CCL document
+title = CCL Example
 database =
   enabled = true
-  limits =
-    cpu = 1500mi
-    memory = 10Gb
   ports =
     = 8000
     = 8001
     = 8002
-title = CCL Example
+  limits =
+    cpu = 1500mi
+    memory = 10Gb
 user =
-  createdAt = 2024-12-31
   guestId = 42
-  login = chshersh"
+  login = chshersh
+  createdAt = 2024-12-31"
             )
         }
     }
@@ -842,7 +846,7 @@ user =
             let mut rng =
                 ChaCha8Rng::seed_from_u64(2000 + 100 * seed + 10 * width as u64 + depth as u64);
             let ccl = random_ccl(&mut rng, width, depth);
-            assert_eq!(ccl.clone(), Model::merge(EMPTY, ccl));
+            assert_eq!(ccl.clone(), Model::merge(Model::empty(), ccl));
         }
         #[rstest]
         fn test_right_empty(
@@ -853,7 +857,7 @@ user =
             let mut rng =
                 ChaCha8Rng::seed_from_u64(3000 + 100 * seed + 10 * width as u64 + depth as u64);
             let ccl = random_ccl(&mut rng, width, depth);
-            assert_eq!(ccl.clone(), Model::merge(ccl, EMPTY));
+            assert_eq!(ccl.clone(), Model::merge(ccl, Model::empty()));
         }
         #[rstest]
         fn test_split_into_length_one(
@@ -875,7 +879,7 @@ user =
             let mut rng =
                 ChaCha8Rng::seed_from_u64(5000 + 100 * seed + 10 * width as u64 + depth as u64);
             let ccl = random_ccl(&mut rng, width, depth);
-            assert_eq!(ccl.split().fold(EMPTY, Model::merge), ccl.clone());
+            assert_eq!(ccl.split().fold(Model::empty(), Model::merge), ccl.clone());
         }
         #[rstest]
         fn test_fold_endomorphism(
@@ -898,7 +902,7 @@ user =
         use pretty_assertions::assert_eq;
         #[test]
         fn test_fold_empty() {
-            assert_eq!(EMPTY.clone().fold(), EMPTY)
+            assert_eq!(Model::empty().clone().fold(), Model::empty())
         }
         #[test]
         fn test_fold_singleton() {
@@ -907,8 +911,15 @@ user =
         #[test]
         fn test_fold() {
             assert_eq!(
-                model!["key1" => model!["value1", "key2" => model!["value2"]], "key3" => model!["key2" => model![ "value3" ]]].fold(),
-                model!["value1" => model![ "key1" ] , "key2" => model!["value2" => model![ "key1" ] , "value3" => model![ "key3" ]]],
+                model![
+                    "key1" => model!["value1", "key2" => model!["value2"]],
+                    "key3" => model!["key2" => model![ "value3" ]]
+                ]
+                .fold(),
+                model![
+                    "value1" => model![ "key1" ] ,
+                    "key2" => model!["value2" => model![ "key1" ] , "value3" => model![ "key3" ]]
+                ],
             )
         }
     }
