@@ -108,15 +108,43 @@ impl Model {
     fn merge(a: Model, b: Model) -> Model {
         Self::union(a, b, Model::merge)
     }
+    fn is_singleton(&self) -> bool {
+        self.0.len() == 1 && self.0.values().all_equal_value() == Ok(&EMPTY)
+    }
     fn fmt_indented(&self, f: &mut std::fmt::Formatter<'_>, indent: usize) -> std::fmt::Result {
-        if !self.0.is_empty() && indent > 0 {
-            writeln!(f)?;
+        if self.is_singleton() {
+            let key = self.0.keys().next().unwrap();
+            write!(f, "{key}")?;
+            return Ok(());
+        }
+        if self.keys().all_equal_value() == Ok("") {
+            let lst = self.get("").unwrap();
+            if lst.split().all(|x| x.is_singleton()) {
+                for (i, v) in lst.keys().enumerate() {
+                    if i > 0 {
+                        writeln!(f)?;
+                    }
+                    write!(f, "{0:indent$}{}= {v}", "")?;
+                }
+                return Ok(());
+            }
         }
         for (i, (k, v)) in self.iter().enumerate() {
             if i > 0 {
                 writeln!(f)?;
             }
-            write!(f, "{0:indent$}{k} =", "")?;
+            write!(
+                f,
+                "{0:indent$}{k} ={1}",
+                "",
+                if v.is_singleton() {
+                    " "
+                } else if v == &EMPTY {
+                    ""
+                } else {
+                    "\n"
+                }
+            )?;
             v.fmt_indented(f, indent + 2)?;
         }
         Ok(())
@@ -669,11 +697,7 @@ key2 = val2",
         }
         #[test]
         fn test_single_key_val() {
-            assert_eq!(
-                format!("{}", model!["key" => model![ "val" ]]),
-                "key =
-  val ="
-            )
+            assert_eq!(format!("{}", model!["key" => model![ "val" ]]), "key = val")
         }
         #[test]
         fn test_two_keys_vals() {
@@ -682,40 +706,50 @@ key2 = val2",
                     "{}",
                     model!["key1" => model![ "val1" ], "key2" => model![ "val2" ]]
                 ),
-                "key1 =
-  val1 =
-key2 =
-  val2 ="
+                "key1 = val1\nkey2 = val2"
+            )
+        }
+        #[test]
+        fn test_singleton() {
+            assert_eq!(format!("{}", model!["key"]), "key")
+        }
+        #[test]
+        fn test_list() {
+            assert_eq!(
+                format!("{}", model!["" => model! [ "key1", "key2" ]]),
+                "= key1\n= key2"
+            )
+        }
+        #[test]
+        fn test_other_list() {
+            assert_eq!(format!("{}", model!["key1", "key2"]), "key1 =\nkey2 =")
+        }
+        #[test]
+        fn test_map_of_singletons() {
+            assert_eq!(
+                format!("{}", model!["key" => model! [ "value1", "value2" ]]),
+                "key =\n  value1 =\n  value2 ="
             )
         }
         #[test]
         fn test_stress() {
             assert_eq!(
                 format!("{}", stress_model!()),
-                "/ =
-  This is a CCL document =
+                "/ = This is a CCL document
 database =
-  enabled =
-    true =
+  enabled = true
   limits =
-    cpu =
-      1500mi =
-    memory =
-      10Gb =
+    cpu = 1500mi
+    memory = 10Gb
   ports =
-     =
-      8000 =
-      8001 =
-      8002 =
-title =
-  CCL Example =
+    = 8000
+    = 8001
+    = 8002
+title = CCL Example
 user =
-  createdAt =
-    2024-12-31 =
-  guestId =
-    42 =
-  login =
-    chshersh ="
+  createdAt = 2024-12-31
+  guestId = 42
+  login = chshersh"
             )
         }
     }
