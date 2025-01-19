@@ -108,12 +108,30 @@ impl Model {
     fn merge(a: Model, b: Model) -> Model {
         Self::union(a, b, Model::merge)
     }
-    fn is_singleton(&self) -> bool {
-        self.0.len() == 1 && self.0.values().all_equal_value() == Ok(&EMPTY)
+    fn split(&self) -> impl Iterator<Item = Model> + use<'_> {
+        self.iter()
+            .map(|(k, v)| Model([(k.to_owned(), v.clone())].into()))
+    }
+    pub fn as_singleton(&self) -> Option<String> {
+        if self.len() == 1 && self.values().all_equal_value() == Ok(&EMPTY) {
+            self.keys().next().map(str::to_owned)
+        } else {
+            None
+        }
+    }
+    pub fn is_singleton(&self) -> bool {
+        self.as_singleton().is_some()
+    }
+    pub fn as_list(&self) -> impl Iterator<Item = Model> + use<'_> {
+        if self.len() == 1 {
+            if let Ok(children) = self.get("") {
+                return children.as_list();
+            }
+        }
+        self.split()
     }
     fn fmt_indented(&self, f: &mut std::fmt::Formatter<'_>, indent: usize) -> std::fmt::Result {
-        if self.is_singleton() {
-            let key = self.0.keys().next().unwrap();
+        if let Some(key) = self.as_singleton() {
             write!(f, "{key}")?;
             return Ok(());
         }
@@ -165,16 +183,6 @@ impl Model {
         } else {
             Err(CCLError)
         }
-    }
-    pub fn as_list(&self) -> impl Iterator<Item = Model> + use<'_> {
-        if self.0.len() == 1 {
-            if let Ok(children) = self.get("") {
-                return children.as_list();
-            }
-        }
-        self.0
-            .iter()
-            .map(|(k, v)| Model([(k.clone(), v.clone())].into()))
     }
 }
 impl std::fmt::Display for Model {
@@ -826,6 +834,28 @@ user =
                 ChaCha8Rng::seed_from_u64(3000 + 100 * seed + 10 * width as u64 + depth as u64);
             let ccl = random_ccl(&mut rng, width, depth);
             assert_eq!(ccl.clone(), Model::merge(ccl, EMPTY));
+        }
+        #[rstest]
+        fn test_split_into_length_one(
+            #[values(1, 2, 3)] seed: u64,
+            #[values(4, 5, 6)] width: usize,
+            #[values(1, 4, 8)] depth: usize,
+        ) {
+            let mut rng =
+                ChaCha8Rng::seed_from_u64(4000 + 100 * seed + 10 * width as u64 + depth as u64);
+            let ccl = random_ccl(&mut rng, width, depth);
+            assert!(ccl.split().all(|m| m.len() == 1));
+        }
+        #[rstest]
+        fn test_split_merge(
+            #[values(1, 2, 3)] seed: u64,
+            #[values(4, 5, 6)] width: usize,
+            #[values(1, 4, 8)] depth: usize,
+        ) {
+            let mut rng =
+                ChaCha8Rng::seed_from_u64(5000 + 100 * seed + 10 * width as u64 + depth as u64);
+            let ccl = random_ccl(&mut rng, width, depth);
+            assert_eq!(ccl.split().fold(EMPTY, Model::merge), ccl.clone());
         }
     }
 }
