@@ -98,8 +98,12 @@ fn parse(s: String) -> KVList {
     }
 }
 
-#[derive(Debug)]
-pub struct CCLError;
+#[derive(Debug, PartialEq, Eq)]
+pub enum CCLError {
+    MissingKey,
+    ValueOfMapping,
+    ParseError,
+}
 
 #[derive(Hash, Clone, Debug, PartialEq, Eq, Default)]
 pub struct Model(Map<Model>);
@@ -209,7 +213,7 @@ impl Model {
         Ok(())
     }
     pub fn get(&self, key: &str) -> Result<&Model, CCLError> {
-        <Self as StringMapLike<_>>::get(self, key).ok_or(CCLError)
+        <Self as StringMapLike<_>>::get(self, key).ok_or(CCLError::MissingKey)
     }
     pub fn at<'a>(&self, keys: impl IntoIterator<Item = &'a str>) -> Result<&Model, CCLError> {
         keys.into_iter().try_fold(self, Self::get)
@@ -217,12 +221,12 @@ impl Model {
     pub fn value<T: FromStr>(&self) -> Result<T, CCLError> {
         if let [key] = self.keys().collect::<Vec<_>>().as_slice() {
             if self.get(key).ok() == Some(&Model::empty()) {
-                key.parse().map_err(|_| CCLError)
+                key.parse().map_err(|_| CCLError::ParseError)
             } else {
-                Err(CCLError)
+                Err(CCLError::ValueOfMapping)
             }
         } else {
-            Err(CCLError)
+            Err(CCLError::ValueOfMapping)
         }
     }
 }
