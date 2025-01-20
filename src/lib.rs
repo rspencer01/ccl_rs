@@ -335,6 +335,10 @@ user =
 user =
   login = chshersh
   createdAt = 2024-12-31
+
+multiline = 
+  this value wraps
+  over the line!
 ";
     macro_rules! stress_model {
         () => {
@@ -356,6 +360,9 @@ user =
                     "login" => model![ "chshersh" ],
                     "createdAt" => model![ "2024-12-31" ]
                 ],
+                "multiline" => model![
+                    "this value wraps\n  over the line!"
+                ]
             ]
         }
     }
@@ -606,6 +613,7 @@ key =
                         ],
                         &kv!["user" => "\n  guestId = 42"],
                         &kv!["user" => "\n  login = chshersh\n  createdAt = 2024-12-31"],
+                        &kv!["multiline" => "\n  this value wraps\n  over the line!"],
                     ]
                 )
             }
@@ -729,7 +737,7 @@ key2 = val2",
     memory = 10Gb",
                      "user" => "\n  guestId = 42",
                      "user" => "\n  login = chshersh\n  createdAt = 2024-12-31",
-
+                     "multiline" => "\n  this value wraps\n  over the line!",
                 ]),
                 stress_model!()
             );
@@ -797,7 +805,9 @@ database =
 user =
   guestId = 42
   login = chshersh
-  createdAt = 2024-12-31"
+  createdAt = 2024-12-31
+multiline = this value wraps
+  over the line!"
             )
         }
     }
@@ -837,6 +847,12 @@ user =
             let ccl = random_ccl(&mut rng, width, depth);
             assert_eq!(ccl, load(format!("{}", ccl)))
         }
+        #[rstest]
+        fn test_stress_roundtrip() {
+            let ccl = stress_model!();
+            assert_eq!(ccl, load(format!("{}", ccl)))
+        }
+
         #[rstest]
         fn test_associative(
             #[values(0, 1, 2, 3, 4, 5, 6, 7, 8, 9)] seed: u64,
