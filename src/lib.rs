@@ -1,45 +1,252 @@
 //! # `ccl_rs`
+//! This is a parser for the **Categorical Configuration Language**.
+//!
+//! The structure of the language is that every parsed [CCL document](Model) is a (possibly empty)
+//! map from [String]s to [CCL document](Model)s.
+//!
+//! ``` ignore
+//! CCL = Mapping[String -> CCL]
+//! ```
+//!
+//! This crate makes the following change from the language as described
+//! [here](https://chshersh.com/blog/2025-01-06-the-most-elegant-configuration-language.html):
+//!
+//! We assume that a string without a `=` sign parses as a key with empty value. That is,
+//! ``` ignore
+//! parse_kv("some string") == KeyValue{key = "some string", value="" };
+//! ```
+//! Interesingly this then means that _no UTF-8 string is invalid as a CCL document_, and so
+//! the [`load`] function is error free. There is no other change to the language apart from
+//! the fact that strings without `=` are now valid:
+//!
+//! ```rust
+//! # use ccl_rs::load;
+//! let model = load("this is just a key".to_owned());
+//! assert_eq!(model.as_singleton(), Some("this is just a key"));
+//! ```
 //!
 //! ## Examples
 //!
-//! ```
-//! use ccl_rs::{Model, load};
+//! To parse a CCL document
 //!
-//! # fn main() -> std::result::Result<(), ccl_rs::CCLError> {
-//! let ccl_doc = "
+//! ```rust
+//! # use ccl_rs::load;
+//! let model = load("
 //! /= This is a CCL document
-//! title = CCL Example
+//! language = rust
+//! library = ccl_rs
+//! author =
+//!   name = Robert Spencer
+//!   species = human
+//! ".to_owned());
+//! ```
 //!
-//! database =
-//!   enabled = true
-//!   ports =
-//!     = 8000
-//!     = 8001
-//!     = 8002
-//!   hosts =
-//!     0.0.0.0 =
-//!     localhost =
-//!   limits =
-//!     cpu = 1500mi
-//!     memory = 10Gb
+//! Scalars in `CCL` don't exist, and the nearest we have are "singletons": maps from strings to
+//! the empty map. We can try cast a model to a singleton with [`Model::as_singleton`].
 //!
+//! ```rust
+//! # use ccl_rs::load;
+//! let singleton = load("
+//! a singleton =
+//! ".to_owned());
+//! assert_eq!(singleton.as_singleton(), Some("a singleton"));
+//! ```
+//!
+//! We can destructure the document with [`Model::get`]
+//!
+//! ```rust
+//! # use ccl_rs::load;
+//! # fn main() -> std::result::Result<(), ccl_rs::CCLError> {
+//! # let model = load("
+//! # /= This is a CCL document
+//! # language = rust
+//! # library = ccl_rs
+//! # author =
+//! #   name = Robert Spencer
+//! #   species = human
+//! # ".to_owned());
+//! assert_eq!(model.get("author")?.get("species")?.as_singleton(), Some("human"));
+//! assert_eq!(model.at(["author", "species"])?.as_singleton(), Some("human"));
+//! # Ok(())
+//! # }
+//! ```
+//! However, [`Model::as_singleton`] should rarely actually be used. You should prefer
+//! [`Model::value`] which casts the singleton value (as a string) to its generic parameter using
+//! [`FromStr`].
+//! ```rust
+//! # use ccl_rs::load;
+//! # fn main() -> std::result::Result<(), ccl_rs::CCLError> {
+//! let model = load("
+//! listen =
+//!   host = 127.0.0.1
+//!   port = 80
+//! daemon = true
+//! ".to_owned());
+//! // We can use the turbo fish to force the type ...
+//! assert_eq!(model.at(["listen", "port"])?.value::<u16>()?, 80u16);
+//! // ... or leave it inferred.
+//! let host : std::net::Ipv4Addr = model.at(["listen", "host"])?.value()?;
+//! //         ^^^^^^^^^^^^^^^^^^ Here we've type hinted, but this might be inferred in other ways
+//! // Even bools are parsed
+//! if !model.get("daemon")?.value()? {
+//!   panic!()
+//! }
+//! # Ok(())
+//! # }
+//! ```
+//! There are two suggested methods for denoting lists and `ccl_rs` provides [`Model::as_list`] that
+//! handles both. Either a list can be valuless keys:
+//! ```rust
+//! # use ccl_rs::load;
+//! # fn main() -> std::result::Result<(), ccl_rs::CCLError> {
+//! let model = load("
+//! fruits =
+//!  apples =
+//!  pears =
+//!  tomatoes =
+//! ".to_owned());
+//! assert_eq!(
+//!   model.get("fruits")?.as_list().map(|x| x.value().unwrap()).collect::<Vec<String>>(),
+//!   ["apples", "pears", "tomatoes"]
+//! );
+//! # Ok(())
+//! # }
+//! ```
+//! Or it can be keyless values
+//! ```rust
+//! # use ccl_rs::load;
+//! # fn main() -> std::result::Result<(), ccl_rs::CCLError> {
+//! let model = load("
+//! fruits =
+//!  = apples
+//!  = pears
+//!  = tomatoes
+//! ".to_owned());
+//! assert_eq!(
+//!   model.get("fruits")?.as_list().map(|x| x.value().unwrap()).collect::<Vec<String>>(),
+//!   ["apples", "pears", "tomatoes"]
+//! );
+//! # Ok(())
+//! # }
+//! ```
+//!
+//! ## Fold
+//! Let us suppose you have two configurations: one from the user and one from the system
+//! settings.
+//! ```rust
+//! # use ccl_rs::{Model, load};
+//! # fn main() -> std::result::Result<(), ccl_rs::CCLError> {
+//! let system = load("
+//! font size = 12px
+//! colour scheme = gruvbox
+//! ".to_owned());
+//! let user = load("
+//! colour scheme = dracula
+//! ".to_owned());
+//! # Ok(())
+//! # }
+//! ```
+//! This gives the model:
+//! The `CCL` method of combining these is either [`Model::merge`], or the equivalent of concatting
+//! the strings and then parsing. This gives:
+//! ```rust
+//! # use ccl_rs::{Model, load};
+//! # fn main() -> std::result::Result<(), ccl_rs::CCLError> {
+//! # let system = load("
+//! # font size = 12px
+//! # colour scheme = gruvbox
+//! # ".to_owned());
+//! # let user = load("
+//! # colour scheme = dracula
+//! # ".to_owned());
+//! let configuration = Model::merge(system, user);
+//! # Ok(())
+//! # }
+//! ```
+//! This gives
+//! ``` ignore
+//! colour scheme =
+//!   dracula =
+//!   gruvbox =
+//! font size = 12px
+//! ```
+//! However, we could do
+//! ```rust
+//! # use ccl_rs::{Model, load};
+//! # fn main() -> std::result::Result<(), ccl_rs::CCLError> {
+//! # let system = load("
+//! # font size = 12px
+//! # colour scheme = gruvbox
+//! # ".to_owned());
+//! # let user = load("
+//! # colour scheme = dracula
+//! # ".to_owned());
+//! let configuration = Model::merge(
+//!   Model::intro("system".to_string(), system),
+//!   Model::intro("user".to_string(), user),
+//! );
+//! # Ok(())
+//! # }
+//! ```
+//! which is
+//! ``` ignore
+//! system =
+//!   font size = 12px
+//!   colour scheme = gruvbox
 //! user =
-//!   guestId = 42
-//!
-//! user =
-//!   login = rspencer01
-//!   createdAt = 2025-01-18
-//! ";
-//! let m = load(ccl_doc.to_owned());
-//! let title : String = m.get("title")?.value()?;
-//! assert_eq!(title, "CCL Example");
-//! assert_eq!(m.at(["database", "limits", "cpu"])?.value::<String>()?, "1500mi");
-//! assert!(m.get("database")?.value::<String>().is_err());
-//! assert!(m.get("not_here").is_err());
-//! assert_eq!(m.at(["database", "ports"])?.as_list().map(|x|x.value::<u32>().unwrap()).collect::<Vec<_>>(), [8000,
-//! 8001, 8002]);
-//! assert_eq!(m.at(["database", "hosts"])?.as_list().map(|x|x.value::<String>().unwrap()).collect::<Vec<_>>(), [
-//! "0.0.0.0", "localhost"]);
+//!   colour scheme = dracula
+//! ```
+//! Now if the application wants to know which colour scheme to use, it could query `["user",
+//! "colour scheme"]` and `["system", "colour scheme"]` and apply precidence. But if we have the
+//! rule that user configuration always trumps system configuration, we can apply the [`Model::fold`]
+//! operator instead as follows:
+//! ```rust
+//! # use ccl_rs::{Model, load};
+//! # fn main() -> std::result::Result<(), ccl_rs::CCLError> {
+//! # let system = load("
+//! # font size = 12px
+//! # colour scheme = gruvbox
+//! # ".to_owned());
+//! # let user = load("
+//! # colour scheme = dracula
+//! # ".to_owned());
+//! let configuration = Model::merge(
+//!   Model::intro("system".to_string(), system),
+//!   Model::intro("user".to_string(), user),
+//! ).fold();
+//! # Ok(())
+//! # }
+//! ```
+//! which gives
+//! ``` ignore
+//! font size =
+//!   12px = system
+//! colour scheme =
+//!   gruvbox = system
+//!   dracula = user
+//! ```
+//! and then the application code can simply do
+//! ```rust
+//! # use ccl_rs::{Model, load};
+//! # fn main() -> std::result::Result<(), ccl_rs::CCLError> {
+//! # let system = load("
+//! # font size = 12px
+//! # colour scheme = gruvbox
+//! # ".to_owned());
+//! # let user = load("
+//! # colour scheme = dracula
+//! # ".to_owned());
+//! # let configuration = Model::merge(
+//! #   Model::intro("system".to_string(), system),
+//! #   Model::intro("user".to_string(), user),
+//! # ).fold();
+//! let colour_scheme: String = configuration
+//!     .get("colour scheme")?
+//!     .as_list()
+//!     .last()
+//!     .unwrap()
+//!     .value()?;
+//! assert_eq!(colour_scheme, "dracula");
 //! # Ok(())
 //! # }
 //! ```
@@ -300,6 +507,7 @@ fn of_key_vals(kvlist: KVList) -> Map<Vec<ValueEntry>> {
 fn fix(kvlist: KVList) -> Model {
     fix_entry_map(of_key_vals(kvlist))
 }
+/// Parse a string into a CCL model
 pub fn load(s: String) -> Model {
     fix(parse(s))
 }
