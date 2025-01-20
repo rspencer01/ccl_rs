@@ -104,8 +104,18 @@ pub struct CCLError;
 #[derive(Hash, Clone, Debug, PartialEq, Eq, Default)]
 pub struct Model(Map<Model>);
 impl Model {
+    /// Create a single key-value pair
+    pub fn intro(key: String, value: Model) -> Model {
+        Model(Map::from([(key, value)]))
+    }
     fn empty() -> Model {
         Model(Map::new())
+    }
+    /// Construct a singleton model
+    ///
+    /// A "singleton" is a map from a single key to the empty model.
+    pub fn singleton(value: String) -> Model {
+        Model::intro(value, Model::empty())
     }
     fn merge(a: Model, b: Model) -> Model {
         Self::union(a, b, Model::merge)
@@ -137,13 +147,19 @@ impl Model {
         self.iter()
             .map(|(k, v)| Model([(k.to_owned(), v.clone())].into()))
     }
-    pub fn as_singleton(&self) -> Option<String> {
+    /// Extracts the singleton value of this [`Model`].
+    ///
+    /// See [`Model::singleton`] for the constructor.
+    pub fn as_singleton(&self) -> Option<&str> {
         if self.len() == 1 && self.values().all_equal_value() == Ok(&Self::empty()) {
-            self.keys().next().map(str::to_owned)
+            self.keys().next()
         } else {
             None
         }
     }
+    /// Checks if this is a singleton
+    ///
+    /// See [`Model::as_singleton`].
     pub fn is_singleton(&self) -> bool {
         self.as_singleton().is_some()
     }
@@ -921,6 +937,15 @@ user =
                     "key2" => model!["value2" => model![ "key1" ] , "value3" => model![ "key3" ]]
                 ],
             )
+        }
+        #[test]
+        fn test_singleton() {
+            assert!(Model::singleton("value".to_owned()).is_singleton());
+            assert_eq!(
+                Model::singleton("value".to_owned()).as_singleton(),
+                Some("value")
+            );
+            assert_eq!(Model::singleton("value".to_owned()), model!["value"]);
         }
     }
 }
