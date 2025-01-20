@@ -121,7 +121,7 @@ impl Model {
     pub fn singleton(value: String) -> Model {
         Model::intro(value, Model::empty())
     }
-    fn merge(a: Model, b: Model) -> Model {
+    pub fn merge(a: Model, b: Model) -> Model {
         Self::union(a, b, Model::merge)
     }
     pub fn fold(self) -> Model {
@@ -220,11 +220,7 @@ impl Model {
     }
     pub fn value<T: FromStr>(&self) -> Result<T, CCLError> {
         if let [key] = self.keys().collect::<Vec<_>>().as_slice() {
-            if self.get(key).ok() == Some(&Model::empty()) {
-                key.parse().map_err(|_| CCLError::ParseError)
-            } else {
-                Err(CCLError::ValueOfMapping)
-            }
+            key.parse().map_err(|_| CCLError::ParseError)
         } else {
             Err(CCLError::ValueOfMapping)
         }
