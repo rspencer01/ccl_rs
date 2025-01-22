@@ -312,14 +312,15 @@ pub enum CCLError {
     ParseError,
 }
 
+/// ## Construction
+/// [`Model`]s should be constructed using [`Model::empty`], [`Model::singleton`] and
+/// [`Model::intro`] along with [`Model::merge`]. Alternatively they can be parsed from strings
+/// using [`load`].
 #[derive(Hash, Clone, Debug, PartialEq, Eq, Default)]
 pub struct Model(Map<Model>);
 impl Model {
-    /// Create a single key-value pair
-    pub fn intro(key: String, value: Model) -> Model {
-        Model(Map::from([(key, value)]))
-    }
-    fn empty() -> Model {
+    /// Create an empty model
+    pub fn empty() -> Model {
         Model(Map::new())
     }
     /// Construct a singleton model
@@ -328,6 +329,17 @@ impl Model {
     pub fn singleton(value: String) -> Model {
         Model::intro(value, Model::empty())
     }
+    /// Create a single key-value pair
+    pub fn intro(key: String, value: Model) -> Model {
+        Model(Map::from([(key, value)]))
+    }
+    /// Combine two models
+    ///
+    /// This is the monoid action on the monoid of models. It is associative and has unit
+    /// [`Model::empty()`]. It works by concatenation and then combination of keys. The
+    /// order of keys is preserved so that the keys of `Model::merge(a, b)` are exactly those of
+    /// `a` followed by those of `b` that are not in `a`. If a key appears in both `a` and `b`, the
+    /// contents are combined again using `Model::merge`.
     pub fn merge(a: Model, b: Model) -> Model {
         Self::union(a, b, Model::merge)
     }
@@ -368,10 +380,7 @@ impl Model {
             None
         }
     }
-    /// Checks if this is a singleton
-    ///
-    /// See [`Model::as_singleton`].
-    pub fn is_singleton(&self) -> bool {
+    fn is_singleton(&self) -> bool {
         self.as_singleton().is_some()
     }
     pub fn as_list(&self) -> impl Iterator<Item = Model> + use<'_> {
