@@ -21,7 +21,7 @@
 //!
 //! ```rust
 //! # use ccl_rs::load;
-//! let model = load("this is just a key".to_owned());
+//! let model = load("this is just a key");
 //! assert_eq!(model.as_singleton(), Some("this is just a key"));
 //! ```
 //!
@@ -38,7 +38,7 @@
 //! author =
 //!   name = Robert Spencer
 //!   species = human
-//! ".to_owned());
+//! ");
 //! ```
 //!
 //! Scalars in `CCL` don't exist, and the nearest we have are "singletons": maps from strings to
@@ -48,7 +48,7 @@
 //! # use ccl_rs::load;
 //! let singleton = load("
 //! a singleton =
-//! ".to_owned());
+//! ");
 //! assert_eq!(singleton.as_singleton(), Some("a singleton"));
 //! ```
 //!
@@ -64,7 +64,7 @@
 //! # author =
 //! #   name = Robert Spencer
 //! #   species = human
-//! # ".to_owned());
+//! # ");
 //! assert_eq!(model.get("author")?.get("species")?.as_singleton(), Some("human"));
 //! assert_eq!(model.at(["author", "species"])?.as_singleton(), Some("human"));
 //! # Ok(())
@@ -81,7 +81,7 @@
 //!   host = 127.0.0.1
 //!   port = 80
 //! daemon = true
-//! ".to_owned());
+//! ");
 //! // We can use the turbo fish to force the type ...
 //! assert_eq!(model.at(["listen", "port"])?.value::<u16>()?, 80u16);
 //! // ... or leave it inferred.
@@ -104,7 +104,7 @@
 //!  apples =
 //!  pears =
 //!  tomatoes =
-//! ".to_owned());
+//! ");
 //! assert_eq!(
 //!   model.get("fruits")?.as_list().map(|x| x.value().unwrap()).collect::<Vec<String>>(),
 //!   ["apples", "pears", "tomatoes"]
@@ -121,7 +121,7 @@
 //!  = apples
 //!  = pears
 //!  = tomatoes
-//! ".to_owned());
+//! ");
 //! assert_eq!(
 //!   model.get("fruits")?.as_list().map(|x| x.value().unwrap()).collect::<Vec<String>>(),
 //!   ["apples", "pears", "tomatoes"]
@@ -139,10 +139,10 @@
 //! let system = load("
 //! font size = 12px
 //! colour scheme = gruvbox
-//! ".to_owned());
+//! ");
 //! let user = load("
 //! colour scheme = dracula
-//! ".to_owned());
+//! ");
 //! # Ok(())
 //! # }
 //! ```
@@ -155,10 +155,10 @@
 //! # let system = load("
 //! # font size = 12px
 //! # colour scheme = gruvbox
-//! # ".to_owned());
+//! # ");
 //! # let user = load("
 //! # colour scheme = dracula
-//! # ".to_owned());
+//! # ");
 //! let configuration = Model::merge(system, user);
 //! # Ok(())
 //! # }
@@ -177,10 +177,10 @@
 //! # let system = load("
 //! # font size = 12px
 //! # colour scheme = gruvbox
-//! # ".to_owned());
+//! # ");
 //! # let user = load("
 //! # colour scheme = dracula
-//! # ".to_owned());
+//! # ");
 //! let configuration = Model::merge(
 //!   Model::intro("system".to_string(), system),
 //!   Model::intro("user".to_string(), user),
@@ -206,10 +206,10 @@
 //! # let system = load("
 //! # font size = 12px
 //! # colour scheme = gruvbox
-//! # ".to_owned());
+//! # ");
 //! # let user = load("
 //! # colour scheme = dracula
-//! # ".to_owned());
+//! # ");
 //! let configuration = Model::merge(
 //!   Model::intro("system".to_string(), system),
 //!   Model::intro("user".to_string(), user),
@@ -232,10 +232,10 @@
 //! # let system = load("
 //! # font size = 12px
 //! # colour scheme = gruvbox
-//! # ".to_owned());
+//! # ");
 //! # let user = load("
 //! # colour scheme = dracula
-//! # ".to_owned());
+//! # ");
 //! # let configuration = Model::merge(
 //! #   Model::intro("system".to_string(), system),
 //! #   Model::intro("user".to_string(), user),
@@ -261,45 +261,42 @@ use maps::{Map, StringMapLike};
 struct ValueEntry(Map<Vec<ValueEntry>>);
 
 #[derive(Debug, PartialEq, Eq)]
-struct KeyValue {
-    key: String,
-    value: String,
+struct KeyValue<'a> {
+    key: &'a str,
+    value: &'a str,
 }
 
-type KVList = Vec<KeyValue>;
+type KVList<'a> = Vec<KeyValue<'a>>;
 fn indent(s: &str) -> usize {
     s.len() - s.trim_start_matches(' ').len()
 }
-fn parse(s: String) -> KVList {
+fn parse(s: &str) -> KVList {
     let mut ans = KVList::new();
-    let s = s.strip_prefix("\n").unwrap_or(&s);
+    let s = s.strip_prefix("\n").unwrap_or(s);
     let first_indent = indent(s);
     let s = s.trim_start();
     if s.is_empty() {
         ans
     } else if let Some((first_key, rest)) = s.split_once('=') {
-        let mut lines = rest
-            .trim_start_matches(' ')
-            .trim_end()
-            .split("\n")
-            .enumerate();
-        let first_value: String = lines
-            .take_while_ref(|(i, x)| *i == 0 || indent(x) > first_indent || x.is_empty())
-            .map(|(_, x)| x)
-            .join("\n")
-            .trim_end()
-            .to_owned();
-        let remainder = lines.map(|(_, x)| x).join("\n");
+        let rest = rest.trim_start_matches(' ').trim_end();
+        let last_byte_index = rest
+            .match_indices("\n")
+            .find(|(i, _)| {
+                indent(&rest[i + 1..]) <= first_indent && rest.get(*i..=i + 1) != Some("\n\n")
+            })
+            .map(|(i, _)| i + 1)
+            .unwrap_or(rest.len());
+        let remainder = &rest[last_byte_index..];
         ans.push(KeyValue {
-            key: first_key.trim().to_owned(),
-            value: first_value.to_owned(),
+            key: first_key.trim(),
+            value: rest[..last_byte_index].trim_start_matches(' ').trim_end(),
         });
         ans.append(&mut parse(remainder));
         ans
     } else {
         ans.push(KeyValue {
-            key: s.trim().to_owned(),
-            value: String::new(),
+            key: s.trim(),
+            value: "",
         });
         ans
     }
@@ -506,8 +503,8 @@ fn add_key_val(
     mut mp: Map<Vec<ValueEntry>>,
     KeyValue { key, value }: KeyValue,
 ) -> Map<Vec<ValueEntry>> {
-    let value: ValueEntry = ValueEntry(of_key_vals(parse(value.clone())));
-    mp.entry(key).or_default().push(value);
+    let value: ValueEntry = ValueEntry(of_key_vals(parse(value)));
+    mp.entry(key.to_owned()).or_default().push(value);
     mp
 }
 fn of_key_vals(kvlist: KVList) -> Map<Vec<ValueEntry>> {
@@ -517,7 +514,7 @@ fn fix(kvlist: KVList) -> Model {
     fix_entry_map(of_key_vals(kvlist))
 }
 /// Parse a string into a CCL model
-pub fn load(s: String) -> Model {
+pub fn load(s: &str) -> Model {
     fix(parse(s))
 }
 
@@ -528,7 +525,7 @@ mod test {
 
     macro_rules! kv {
         [$k:expr => $v: expr] => {
-            KeyValue { key: $k.to_owned(), value: $v.to_owned() }
+            KeyValue { key: $k, value: $v }
         };
     }
 
@@ -609,10 +606,7 @@ multiline =
         // We use a macro to panic in the function
         macro_rules! assert_parse_iter {
             ($input:expr, $expected:expr) => {
-                assert_eq!(
-                    parse($input.to_owned()).iter().collect::<Vec<_>>(),
-                    $expected
-                )
+                assert_eq!(parse($input).iter().collect::<Vec<_>>(), $expected)
             };
         }
 
@@ -623,7 +617,7 @@ multiline =
             fn test_empty(
                 #[values("", " ", "   ", "\n", "  \n", "\n\n", "  \n  \n  ")] input: &str,
             ) {
-                assert!(parse(input.to_owned()).is_empty())
+                assert!(parse(input).is_empty())
             }
         }
         mod test_multiple {
@@ -840,16 +834,16 @@ key =
             use pretty_assertions::assert_eq;
             #[test]
             fn test_empty() {
-                assert!(parse("".to_owned()).is_empty())
+                assert!(parse("").is_empty())
             }
             #[ignore]
             #[test]
             fn test_spaces() {
-                assert!(parse("   ".to_owned()).is_empty(),)
+                assert!(parse("   ").is_empty(),)
             }
             #[test]
             fn test_eol() {
-                assert!(parse("\n".to_owned()).is_empty())
+                assert!(parse("\n").is_empty())
             }
             #[test]
             fn test_just_string() {
@@ -1062,12 +1056,12 @@ multiline = this value wraps
         ) {
             let mut rng = ChaCha8Rng::seed_from_u64(100 * seed + 10 * width as u64 + depth as u64);
             let ccl = random_ccl(&mut rng, width, depth);
-            assert_eq!(ccl, load(format!("{}", ccl)))
+            assert_eq!(ccl, load(&format!("{}", ccl)))
         }
         #[rstest]
         fn test_stress_roundtrip() {
             let ccl = stress_model!();
-            assert_eq!(ccl, load(format!("{}", ccl)))
+            assert_eq!(ccl, load(&format!("{}", ccl)))
         }
 
         #[rstest]
