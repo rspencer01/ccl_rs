@@ -460,6 +460,17 @@ impl Model {
     pub fn remove(&mut self, key: &str) -> Result<Model, MissingKey> {
         <Self as StringMapLike<_>>::remove(self, key).ok_or(MissingKey(key.to_owned()))
     }
+    /// Filter out element from this Model, recursively
+    ///
+    /// This applies the predicate to each key in the Model and retains only those keys for which
+    /// the predicate evaluates to `true`. It then filters the values by the same predicate.
+    pub fn filter_to<F: Fn(&str) -> bool + Clone>(self, predicate: F) -> Model {
+        Model(
+            self.into_iter()
+                .filter_map(|(k, v)| predicate(&k).then(|| (k, v.filter_to(&predicate))))
+                .collect(),
+        )
+    }
 }
 impl std::fmt::Display for Model {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
