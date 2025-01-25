@@ -55,8 +55,8 @@
 //! We can destructure the document with [`Model::get`]
 //!
 //! ```rust
-//! # use ccl_rs::load;
-//! # fn main() -> std::result::Result<(), ccl_rs::CCLError> {
+//! # use ccl_rs::{MissingKey, load};
+//! # fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
 //! # let model = load("
 //! # /= This is a CCL document
 //! # language = rust
@@ -75,7 +75,7 @@
 //! [`FromStr`].
 //! ```rust
 //! # use ccl_rs::load;
-//! # fn main() -> std::result::Result<(), ccl_rs::CCLError> {
+//! # fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
 //! let model = load("
 //! listen =
 //!   host = 127.0.0.1
@@ -98,7 +98,7 @@
 //! handles both. Either a list can be valuless keys:
 //! ```rust
 //! # use ccl_rs::load;
-//! # fn main() -> std::result::Result<(), ccl_rs::CCLError> {
+//! # fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
 //! let model = load("
 //! fruits =
 //!  apples =
@@ -115,7 +115,7 @@
 //! Or it can be keyless values
 //! ```rust
 //! # use ccl_rs::load;
-//! # fn main() -> std::result::Result<(), ccl_rs::CCLError> {
+//! # fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
 //! let model = load("
 //! fruits =
 //!  = apples
@@ -135,7 +135,7 @@
 //! settings.
 //! ```rust
 //! # use ccl_rs::{Model, load};
-//! # fn main() -> std::result::Result<(), ccl_rs::CCLError> {
+//! # fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
 //! let system = load("
 //! font size = 12px
 //! colour scheme = gruvbox
@@ -151,7 +151,7 @@
 //! the strings and then parsing. This gives:
 //! ```rust
 //! # use ccl_rs::{Model, load};
-//! # fn main() -> std::result::Result<(), ccl_rs::CCLError> {
+//! # fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
 //! # let system = load("
 //! # font size = 12px
 //! # colour scheme = gruvbox
@@ -173,7 +173,7 @@
 //! However, we could do
 //! ```rust
 //! # use ccl_rs::{Model, load};
-//! # fn main() -> std::result::Result<(), ccl_rs::CCLError> {
+//! # fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
 //! # let system = load("
 //! # font size = 12px
 //! # colour scheme = gruvbox
@@ -202,7 +202,7 @@
 //! operator instead as follows:
 //! ```rust
 //! # use ccl_rs::{Model, load};
-//! # fn main() -> std::result::Result<(), ccl_rs::CCLError> {
+//! # fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
 //! # let system = load("
 //! # font size = 12px
 //! # colour scheme = gruvbox
@@ -228,7 +228,7 @@
 //! and then the application code can simply do
 //! ```rust
 //! # use ccl_rs::{Model, load};
-//! # fn main() -> std::result::Result<(), ccl_rs::CCLError> {
+//! # fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
 //! # let system = load("
 //! # font size = 12px
 //! # colour scheme = gruvbox
@@ -303,11 +303,25 @@ fn parse(s: &str) -> KVList {
 }
 
 #[derive(Debug, PartialEq, Eq)]
-pub enum CCLError {
-    MissingKey,
+pub struct MissingKey(String);
+impl std::fmt::Display for MissingKey {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "Missing key {}", self.0)
+    }
+}
+impl std::error::Error for MissingKey {}
+
+#[derive(Debug, PartialEq, Eq)]
+pub enum ValueError {
     ValueOfMapping,
     ParseError,
 }
+impl std::fmt::Display for ValueError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{:?}", self)
+    }
+}
+impl std::error::Error for ValueError {}
 
 /// ## Construction
 /// [`Model`]s should be constructed using [`Model::empty`], [`Model::singleton`] and
@@ -425,22 +439,22 @@ impl Model {
         }
         Ok(())
     }
-    pub fn get(&self, key: &str) -> Result<&Model, CCLError> {
-        <Self as StringMapLike<_>>::get(self, key).ok_or(CCLError::MissingKey)
+    pub fn get(&self, key: &str) -> Result<&Model, MissingKey> {
+        <Self as StringMapLike<_>>::get(self, key).ok_or_else(|| MissingKey(key.to_owned()))
     }
-    pub fn at<'a>(&self, keys: impl IntoIterator<Item = &'a str>) -> Result<&Model, CCLError> {
+    pub fn at<'a>(&self, keys: impl IntoIterator<Item = &'a str>) -> Result<&Model, MissingKey> {
         keys.into_iter().try_fold(self, Self::get)
     }
-    pub fn value<T: FromStr>(&self) -> Result<T, CCLError> {
+    pub fn value<T: FromStr>(&self) -> Result<T, ValueError> {
         if let [key] = self.keys().collect::<Vec<_>>().as_slice() {
-            key.parse().map_err(|_| CCLError::ParseError)
+            key.parse().map_err(|_| ValueError::ParseError)
         } else {
-            Err(CCLError::ValueOfMapping)
+            Err(ValueError::ValueOfMapping)
         }
     }
     /// Fetch and remove a value by key
-    pub fn remove(&mut self, key: &str) -> Result<Model, CCLError> {
-        <Self as StringMapLike<_>>::remove(self, key).ok_or(CCLError::MissingKey)
+    pub fn remove(&mut self, key: &str) -> Result<Model, MissingKey> {
+        <Self as StringMapLike<_>>::remove(self, key).ok_or(MissingKey(key.to_owned()))
     }
 }
 impl std::fmt::Display for Model {
@@ -1189,7 +1203,7 @@ multiline = this value wraps
             let mut m = model!["key1" => model![ "val1" ], "key2" => model![ "val2" ]];
             assert_eq!(m.remove("key1"), Ok(model!["val1"]));
             assert_eq!(m, model!["key2" => model![ "val2" ]]);
-            assert_eq!(m.remove("key1"), Err(CCLError::MissingKey));
+            assert_eq!(m.remove("key1"), Err(MissingKey("key1".to_owned())));
         }
         #[test]
         fn test_filter() {
