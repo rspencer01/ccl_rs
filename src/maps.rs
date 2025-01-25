@@ -11,6 +11,8 @@ pub(crate) trait StringMapLike<V>: Default + IntoIterator {
 
     fn get(&self, key: &str) -> Option<&V>;
 
+    fn remove(&mut self, key: &str) -> Option<V>;
+
     fn insert(&mut self, key: String, value: V);
 
     fn len(&self) -> usize;
@@ -55,6 +57,10 @@ impl<V: std::hash::Hash + Eq> StringMapLike<V> for Map<V> {
 
     fn get(&self, key: &str) -> Option<&V> {
         OrderMap::get(self, key)
+    }
+
+    fn remove(&mut self, key: &str) -> Option<V> {
+        OrderMap::remove(self, key)
     }
 
     fn insert(&mut self, key: String, value: V) {

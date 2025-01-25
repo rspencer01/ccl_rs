@@ -438,6 +438,10 @@ impl Model {
             Err(CCLError::ValueOfMapping)
         }
     }
+    /// Fetch and remove a value by key
+    pub fn remove(&mut self, key: &str) -> Result<Model, CCLError> {
+        <Self as StringMapLike<_>>::remove(self, key).ok_or(CCLError::MissingKey)
+    }
 }
 impl std::fmt::Display for Model {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -467,6 +471,10 @@ impl StringMapLike<Model> for Model {
 
     fn get(&self, key: &str) -> Option<&Model> {
         StringMapLike::get(&self.0, key)
+    }
+
+    fn remove(&mut self, key: &str) -> Option<Model> {
+        StringMapLike::remove(&mut self.0, key)
     }
 
     fn insert(&mut self, key: String, value: Model) {
@@ -1173,6 +1181,18 @@ multiline = this value wraps
                 Some("value")
             );
             assert_eq!(Model::singleton("value".to_owned()), model!["value"]);
+        }
+        #[test]
+        fn test_remove() {
+            let mut m = model!["key1" => model![ "val1" ], "key2" => model![ "val2" ]];
+            assert_eq!(m.remove("key1"), Ok(model!["val1"]));
+            assert_eq!(m, model!["key2" => model![ "val2" ]]);
+            assert_eq!(m.remove("key1"), Err(CCLError::MissingKey));
+        }
+        #[test]
+        fn test_filter() {
+            let m = model!["/" => model![ "val1" ], "key2" => model![ "/" ]];
+            assert_eq!(m.filter_to(|x| x != "/"), model!["key2"]);
         }
     }
 }
