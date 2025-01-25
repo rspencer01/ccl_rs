@@ -323,12 +323,12 @@ impl Model {
     /// Construct a singleton model
     ///
     /// A "singleton" is a map from a single key to the empty model.
-    pub fn singleton(value: String) -> Model {
-        Model::intro(value, Model::empty())
+    pub fn singleton<S: ToString>(value: S) -> Model {
+        Model::intro(value.to_string(), Model::empty())
     }
     /// Create a single key-value pair
-    pub fn intro(key: String, value: Model) -> Model {
-        Model(Map::from([(key, value)]))
+    pub fn intro<S: ToString>(key: S, value: Model) -> Model {
+        Model(Map::from([(key.to_string(), value)]))
     }
     /// Combine two models
     ///
@@ -1152,6 +1152,11 @@ multiline = this value wraps
         use super::*;
         use pretty_assertions::assert_eq;
         #[test]
+        fn test_intro() {
+            Model::intro("foo", Model::empty());
+            Model::intro(123, Model::empty());
+        }
+        #[test]
         fn test_fold_empty() {
             assert_eq!(Model::empty().clone().fold(), Model::empty())
         }
@@ -1175,12 +1180,9 @@ multiline = this value wraps
         }
         #[test]
         fn test_singleton() {
-            assert!(Model::singleton("value".to_owned()).is_singleton());
-            assert_eq!(
-                Model::singleton("value".to_owned()).as_singleton(),
-                Some("value")
-            );
-            assert_eq!(Model::singleton("value".to_owned()), model!["value"]);
+            assert!(Model::singleton("value").is_singleton());
+            assert_eq!(Model::singleton("value").as_singleton(), Some("value"));
+            assert_eq!(Model::singleton("value"), model!["value"]);
         }
         #[test]
         fn test_remove() {
