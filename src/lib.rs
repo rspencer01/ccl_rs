@@ -71,7 +71,7 @@
 //! # }
 //! ```
 //! However, [`Model::as_singleton`] should rarely actually be used. You should prefer
-//! [`Model::value`] which casts the singleton value (as a string) to its generic parameter using
+//! [`Model::parse_value`] which casts the singleton value (as a string) to its generic parameter using
 //! [`FromStr`].
 //! ```rust
 //! # use ccl_rs::load;
@@ -83,12 +83,12 @@
 //! daemon = true
 //! ");
 //! // We can use the turbo fish to force the type ...
-//! assert_eq!(model.at(["listen", "port"])?.value::<u16>()?, 80u16);
+//! assert_eq!(model.at(["listen", "port"])?.parse_value::<u16>()?, 80u16);
 //! // ... or leave it inferred.
-//! let host : std::net::Ipv4Addr = model.at(["listen", "host"])?.value()?;
+//! let host : std::net::Ipv4Addr = model.at(["listen", "host"])?.parse_value()?;
 //! //         ^^^^^^^^^^^^^^^^^^ Here we've type hinted, but this might be inferred in other ways
 //! // Even bools are parsed
-//! if !model.get("daemon")?.value()? {
+//! if !model.get("daemon")?.parse_value()? {
 //!   panic!()
 //! }
 //! # Ok(())
@@ -106,7 +106,7 @@
 //!  tomatoes =
 //! ");
 //! assert_eq!(
-//!   model.get("fruits")?.as_list().map(|x| x.value().unwrap()).collect::<Vec<String>>(),
+//!   model.get("fruits")?.as_list().map(|x| x.value().unwrap().to_owned()).collect::<Vec<_>>(),
 //!   ["apples", "pears", "tomatoes"]
 //! );
 //! # Ok(())
@@ -123,7 +123,7 @@
 //!  = tomatoes
 //! ");
 //! assert_eq!(
-//!   model.get("fruits")?.as_list().map(|x| x.value().unwrap()).collect::<Vec<String>>(),
+//!   model.get("fruits")?.as_list().map(|x| x.value().unwrap().to_owned()).collect::<Vec<_>>(),
 //!   ["apples", "pears", "tomatoes"]
 //! );
 //! # Ok(())
@@ -240,12 +240,12 @@
 //! #   Model::intro("system".to_string(), system),
 //! #   Model::intro("user".to_string(), user),
 //! # ).fold();
-//! let colour_scheme: String = configuration
+//! let colour_scheme_item : Model = configuration
 //!     .get("colour scheme")?
 //!     .as_list()
 //!     .last()
-//!     .unwrap()
-//!     .value()?;
+//!     .unwrap();
+//! let colour_scheme : &str = colour_scheme_item.value()?;
 //! assert_eq!(colour_scheme, "dracula");
 //! # Ok(())
 //! # }
@@ -445,9 +445,13 @@ impl Model {
     pub fn at<'a>(&self, keys: impl IntoIterator<Item = &'a str>) -> Result<&Model, MissingKey> {
         keys.into_iter().try_fold(self, Self::get)
     }
-    pub fn value<T: FromStr>(&self) -> Result<T, ValueError> {
+    pub fn parse_value<T: FromStr>(&self) -> Result<T, ValueError> {
+        self.value()
+            .and_then(|x| T::from_str(x).map_err(|_| ValueError::ParseError))
+    }
+    pub fn value(&self) -> Result<&str, ValueError> {
         if let [key] = self.keys().collect::<Vec<_>>().as_slice() {
-            key.parse().map_err(|_| ValueError::ParseError)
+            Ok(key)
         } else {
             Err(ValueError::ValueOfMapping)
         }
