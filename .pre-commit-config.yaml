@@ -15,6 +15,13 @@ repos:
         language: system
         files: \.rs$
         pass_filenames: false
+      - id: cargo-check-no-intern
+        name: cargo check no intern
+        description: Check the package for errors.
+        entry: cargo check
+        language: system
+        files: \.rs$
+        pass_filenames: false
       - id: cargo-clippy
         name: cargo clippy
         description: Run the Clippy linter on the package.
@@ -22,10 +29,24 @@ repos:
         language: system
         files: \.rs$
         pass_filenames: false
+      - id: cargo-clippy-no-intern
+        name: cargo clippy no intern
+        description: Run the Clippy linter on the package.
+        entry: cargo clippy --features no-intern -- -D warnings
+        language: system
+        files: \.rs$
+        pass_filenames: false
       - id: cargo-test
         name: cargo test
         description: Run tests on the package.
         entry: cargo test
+        language: system
+        files: \.rs$
+        pass_filenames: false
+      - id: cargo-test-no-intern
+        name: cargo test no intern
+        description: Run tests on the package.
+        entry: cargo test --features no-intern
         language: system
         files: \.rs$
         pass_filenames: false

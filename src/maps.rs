@@ -1,19 +1,22 @@
+use crate::interner::{resolve_ref, InternedString, InternedStringRef};
 use ordermap::OrderMap;
 
-pub(crate) type Map<V> = OrderMap<String, V>;
+pub(crate) type Map<V> = OrderMap<InternedString, V>;
 
-pub(crate) trait StringMapLike<V>: Default + IntoIterator {
-    fn keys(&self) -> impl Iterator<Item = &str>;
+pub(crate) trait StringMapLike<V>:
+    Default + IntoIterator<Item = (InternedString, V)>
+{
+    fn keys(&self) -> impl Iterator<Item = InternedStringRef>;
 
     fn values<'a>(&'a self) -> impl Iterator<Item = &'a V>
     where
         V: 'a;
 
-    fn get(&self, key: &str) -> Option<&V>;
+    fn get(&self, key: InternedStringRef) -> Option<&V>;
 
-    fn remove(&mut self, key: &str) -> Option<V>;
+    fn remove(&mut self, key: InternedStringRef) -> Option<V>;
 
-    fn insert(&mut self, key: String, value: V);
+    fn insert(&mut self, key: InternedString, value: V);
 
     fn len(&self) -> usize;
 
@@ -44,8 +47,8 @@ pub(crate) trait StringMapLike<V>: Default + IntoIterator {
 }
 
 impl<V: std::hash::Hash + Eq> StringMapLike<V> for Map<V> {
-    fn keys(&self) -> impl Iterator<Item = &str> {
-        self.keys().map(String::as_str)
+    fn keys(&self) -> impl Iterator<Item = InternedStringRef> {
+        self.keys().map(InternedString::as_ref)
     }
 
     fn values<'a>(&'a self) -> impl Iterator<Item = &'a V>
@@ -55,15 +58,15 @@ impl<V: std::hash::Hash + Eq> StringMapLike<V> for Map<V> {
         self.values()
     }
 
-    fn get(&self, key: &str) -> Option<&V> {
+    fn get(&self, key: InternedStringRef) -> Option<&V> {
         OrderMap::get(self, key)
     }
 
-    fn remove(&mut self, key: &str) -> Option<V> {
+    fn remove(&mut self, key: InternedStringRef) -> Option<V> {
         OrderMap::remove(self, key)
     }
 
-    fn insert(&mut self, key: String, value: V) {
+    fn insert(&mut self, key: InternedString, value: V) {
         OrderMap::insert(self, key, value);
     }
 
@@ -75,6 +78,6 @@ impl<V: std::hash::Hash + Eq> StringMapLike<V> for Map<V> {
     where
         V: 'a,
     {
-        self.iter().map(|(k, v)| (k.as_str(), v))
+        self.iter().map(|(k, v)| (resolve_ref(k), v))
     }
 }

@@ -250,8 +250,18 @@
 //! # Ok(())
 //! # }
 //! ```
+//!
+//! ## Features
+//! By default all strings are interned using [`ustr`]. If you want to disable this, you can use
+//! the feature flag `no-intern`.
+
+#[cfg_attr(feature = "no-intern", path = "interner/none.rs")]
+#[cfg_attr(not(feature = "no-intern"), path = "interner/ustr.rs")]
+mod interner;
+
 mod maps;
 
+use interner::{InternedString, InternedStringRef};
 use std::str::FromStr;
 
 use itertools::Itertools;
@@ -338,11 +348,11 @@ impl Model {
     ///
     /// A "singleton" is a map from a single key to the empty model.
     pub fn singleton<S: ToString>(value: S) -> Model {
-        Model::intro(value.to_string(), Model::empty())
+        Model::intro(value, Model::empty())
     }
     /// Create a single key-value pair
     pub fn intro<S: ToString>(key: S, value: Model) -> Model {
-        Model(Map::from([(key.to_string(), value)]))
+        Model(Map::from([(interner::get(key), value)]))
     }
     /// Combine two models
     ///
@@ -359,13 +369,13 @@ impl Model {
             if self.is_singleton() {
                 return self;
             }
-            let key = self.keys().next().unwrap().to_owned();
+            let key = interner::get(self.keys().next().unwrap());
             let value = self.values().next().unwrap();
             value
                 .split()
                 .map(|m| {
                     Model(
-                        m.into_iter()
+                        m.0.into_iter()
                             .map(|(k, v)| (k, Model([(key.clone(), v)].into()).fold()))
                             .collect(),
                     )
@@ -378,15 +388,16 @@ impl Model {
         }
     }
     fn split(&self) -> impl Iterator<Item = Model> + use<'_> {
-        self.iter()
-            .map(|(k, v)| Model([(k.to_owned(), v.clone())].into()))
+        self.0
+            .iter()
+            .map(|(k, v)| Model([(k.clone(), v.clone())].into()))
     }
     /// Extracts the singleton value of this [`Model`].
     ///
     /// See [`Model::singleton`] for the constructor.
     pub fn as_singleton(&self) -> Option<&str> {
         if self.len() == 1 && self.values().all_equal_value() == Ok(&Self::empty()) {
-            self.keys().next()
+            self.keys().next().map(interner::resolve_ref)
         } else {
             None
         }
@@ -407,7 +418,7 @@ impl Model {
             write!(f, "{key}")?;
             return Ok(());
         }
-        if self.keys().all_equal_value() == Ok("") {
+        if self.keys().all_equal_value() == Ok(interner::get(String::new()).as_ref()) {
             let lst = self.get("").unwrap();
             if lst.split().all(|x| x.is_singleton()) {
                 for (i, v) in lst.keys().enumerate() {
@@ -439,8 +450,11 @@ impl Model {
         }
         Ok(())
     }
+    #[allow(clippy::useless_asref)]
     pub fn get(&self, key: &str) -> Result<&Model, MissingKey> {
-        <Self as StringMapLike<_>>::get(self, key).ok_or_else(|| MissingKey(key.to_owned()))
+        interner::try_get(key)
+            .and_then(|key| <Self as StringMapLike<_>>::get(self, key.as_ref()))
+            .ok_or_else(|| MissingKey(key.to_owned()))
     }
     pub fn at<'a>(&self, keys: impl IntoIterator<Item = &'a str>) -> Result<&Model, MissingKey> {
         keys.into_iter().try_fold(self, Self::get)
@@ -451,14 +465,17 @@ impl Model {
     }
     pub fn value(&self) -> Result<&str, ValueError> {
         if let [key] = self.keys().collect::<Vec<_>>().as_slice() {
-            Ok(key)
+            Ok(interner::resolve_ref(key))
         } else {
             Err(ValueError::ValueOfMapping)
         }
     }
     /// Fetch and remove a value by key
+    #[allow(clippy::useless_asref)]
     pub fn remove(&mut self, key: &str) -> Result<Model, MissingKey> {
-        <Self as StringMapLike<_>>::remove(self, key).ok_or(MissingKey(key.to_owned()))
+        interner::try_get(key)
+            .and_then(|key| <Self as StringMapLike<_>>::remove(self, key.as_ref()))
+            .ok_or(MissingKey(key.to_owned()))
     }
     /// Filter out element from this Model, recursively
     ///
@@ -467,7 +484,10 @@ impl Model {
     pub fn filter_to<F: Fn(&str) -> bool + Clone>(self, predicate: F) -> Model {
         Model(
             self.into_iter()
-                .filter_map(|(k, v)| predicate(&k).then(|| (k, v.filter_to(&predicate))))
+                .filter_map(|(k, v)| {
+                    predicate(interner::resolve_ref(&k))
+                        .then(|| (k, v.filter_to(predicate.clone())))
+                })
                 .collect(),
         )
     }
@@ -478,16 +498,16 @@ impl std::fmt::Display for Model {
     }
 }
 impl IntoIterator for Model {
-    type Item = (String, Model);
+    type Item = (InternedString, Model);
 
-    type IntoIter = ordermap::map::IntoIter<String, Model>;
+    type IntoIter = ordermap::map::IntoIter<InternedString, Model>;
 
     fn into_iter(self) -> Self::IntoIter {
         self.0.into_iter()
     }
 }
 impl StringMapLike<Model> for Model {
-    fn keys(&self) -> impl Iterator<Item = &str> {
+    fn keys(&self) -> impl Iterator<Item = InternedStringRef> {
         StringMapLike::keys(&self.0)
     }
 
@@ -498,15 +518,15 @@ impl StringMapLike<Model> for Model {
         StringMapLike::values(&self.0)
     }
 
-    fn get(&self, key: &str) -> Option<&Model> {
+    fn get(&self, key: InternedStringRef) -> Option<&Model> {
         StringMapLike::get(&self.0, key)
     }
 
-    fn remove(&mut self, key: &str) -> Option<Model> {
+    fn remove(&mut self, key: InternedStringRef) -> Option<Model> {
         StringMapLike::remove(&mut self.0, key)
     }
 
-    fn insert(&mut self, key: String, value: Model) {
+    fn insert(&mut self, key: InternedString, value: Model) {
         StringMapLike::insert(&mut self.0, key, value);
     }
 
@@ -541,7 +561,7 @@ fn add_key_val(
     KeyValue { key, value }: KeyValue,
 ) -> Map<Vec<ValueEntry>> {
     let value: ValueEntry = ValueEntry(of_key_vals(parse(value)));
-    mp.entry(key.to_owned()).or_default().push(value);
+    mp.entry(interner::get(key)).or_default().push(value);
     mp
 }
 fn of_key_vals(kvlist: KVList) -> Map<Vec<ValueEntry>> {
@@ -625,10 +645,10 @@ multiline =
         }
     macro_rules! model_term {
         ($k:literal => $v:expr) => {
-            ($k.to_owned(), $v)
+            (interner::get($k), $v)
         };
         ($k:literal) => {
-            ($k.to_owned(), Model::empty())
+            (interner::get($k), Model::empty())
         };
     }
     macro_rules! model {
@@ -1074,9 +1094,11 @@ multiline = this value wraps
             Model(
                 std::iter::repeat_with(|| {
                     (
-                        std::iter::repeat_with(|| rng.sample(Alphanumeric) as char)
-                            .take(3)
-                            .collect(),
+                        interner::get(
+                            std::iter::repeat_with(|| rng.sample(Alphanumeric) as char)
+                                .take(3)
+                                .collect::<String>(),
+                        ),
                         random_ccl(rng, width, depth - 1),
                     )
                 })
