@@ -267,7 +267,7 @@ use std::str::FromStr;
 use itertools::Itertools;
 use maps::{Map, StringMapLike};
 
-#[derive(Debug)]
+#[derive(Default)]
 struct ValueEntry(Map<Vec<ValueEntry>>);
 
 #[derive(Debug, PartialEq, Eq)]
@@ -542,37 +542,31 @@ impl StringMapLike<Model> for Model {
     }
 }
 
-fn fix_entry_map(mp: Map<Vec<ValueEntry>>) -> Model {
+fn fix_entry_map(mp: ValueEntry) -> Model {
     Model(
-        mp.into_iter()
+        mp.0.into_iter()
             .map(|(k, v)| {
                 (
                     k,
                     v.into_iter()
-                        .map(|em| fix_entry_map(em.0))
+                        .map(fix_entry_map)
                         .fold(Model::empty(), Model::merge),
                 )
             })
             .collect(),
     )
 }
-fn add_key_val(
-    mut mp: Map<Vec<ValueEntry>>,
-    KeyValue { key, value }: KeyValue,
-) -> Map<Vec<ValueEntry>> {
-    let value: ValueEntry = ValueEntry(of_key_vals(parse(value)));
-    mp.entry(interner::get(key)).or_default().push(value);
+fn add_key_val(mut mp: ValueEntry, KeyValue { key, value }: KeyValue) -> ValueEntry {
+    let value: ValueEntry = of_key_vals(parse(value));
+    mp.0.entry(interner::get(key)).or_default().push(value);
     mp
 }
-fn of_key_vals(kvlist: KVList) -> Map<Vec<ValueEntry>> {
-    kvlist.into_iter().fold(Map::new(), add_key_val)
-}
-fn fix(kvlist: KVList) -> Model {
-    fix_entry_map(of_key_vals(kvlist))
+fn of_key_vals(kvlist: KVList) -> ValueEntry {
+    kvlist.into_iter().fold(ValueEntry::default(), add_key_val)
 }
 /// Parse a string into a CCL model
 pub fn load(s: &str) -> Model {
-    fix(parse(s))
+    fix_entry_map(of_key_vals(parse(s)))
 }
 
 #[cfg(test)]
@@ -969,19 +963,19 @@ key2 = val2",
         use pretty_assertions::assert_eq;
         #[test]
         fn test_empty() {
-            assert_eq!(fix(kvl![]), Model::empty())
+            assert_eq!(fix_entry_map(of_key_vals(kvl![])), Model::empty())
         }
         #[test]
         fn test_single() {
             assert_eq!(
-                fix(kvl!["key" => "value"]),
+                fix_entry_map(of_key_vals(kvl!["key" => "value"])),
                 model!["key" => model!["value" => Model::empty()]]
             )
         }
         #[test]
         fn test_double() {
             assert_eq!(
-                fix(kvl!["key1" => "value1", "key2" => "value2"]),
+                fix_entry_map(of_key_vals(kvl!["key1" => "value1", "key2" => "value2"])),
                 model![
                     "key1" => model!["value1" => Model::empty()],
                     "key2" => model!["value2" => Model::empty()],
@@ -991,7 +985,7 @@ key2 = val2",
         #[test]
         fn test_stress() {
             assert_eq!(
-                fix(kvl![
+                fix_entry_map(of_key_vals(kvl![
                      "/" => "This is a CCL document",
                      "title" => "CCL Example",
                      "database" => "
@@ -1006,7 +1000,7 @@ key2 = val2",
                      "user" => "\n  guestId = 42",
                      "user" => "\n  login = chshersh\n  createdAt = 2024-12-31",
                      "multiline" => "\n  this value wraps\n  over the line!",
-                ]),
+                ])),
                 stress_model!()
             );
         }
