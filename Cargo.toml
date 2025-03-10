@@ -2,6 +2,13 @@
 name = "ccl_rs"
 version = "0.1.0"
 edition = "2021"
+description = "A parser for the Categorical Configuration Language"
+repository = "https://github.com/rspencer01/ccl_rs"
+license = "MIT"
+keywords = ["ccl", "config"]
+authors = ["Robert Spencer <me@robertandrewspencer.com>"]
+categories = ["config", "parser-implementations"]
+exclude = [".*"]
 
 [dependencies]
 itertools = "0.14.0"
@@ -17,3 +24,6 @@ rand_chacha = "0.3.1"
 [features]
 default = ["dep:ustr"]
 no-intern = []
+
+[lints.rust]
+unsafe_code = "forbid"
